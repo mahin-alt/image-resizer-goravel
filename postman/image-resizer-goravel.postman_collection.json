@@ -269,7 +269,7 @@
 					"host": [ "{{base_url}}" ],
 					"path": [ "api", "v1", "images", "{{request_id}}" ]
 				},
-				"description": "Poll this until status is \"completed\" or \"partially_completed\". Each entry in \"images\" has a \"url\" you can open directly to view the generated WebP. Update the request_id collection variable to the id returned by whichever Create request you just ran."
+				"description": "Poll this until status is \"completed\" or \"partially_completed\". Each entry in \"images\" has a \"url\" (opens/renders inline in a browser) and a \"download_url\" (forces a browser download via Content-Disposition: attachment) for the generated WebP. Update the request_id collection variable to the id returned by whichever Create request you just ran."
 			}
 		}
 	]

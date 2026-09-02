@@ -16,6 +16,7 @@ func Api() {
 	facades.Route().Prefix("api/v1").Group(func(router route.Router) {
 		router.Post("images", imageController.Store)
 		router.Get("images/{id}", imageController.Show)
+		router.Get("images/{id}/outputs/{outputId}/download", imageController.Download)
 	})
 
 	facades.Route().Static("images", imageconfig.StoragePath())

@@ -147,17 +147,31 @@ entries; `mode` must be one of `contain`, `fit`, `cover`, `crop`, `fill`.
 
 ```json
 {
-  "id": 1,
   "status": "completed",
+  "id": 1,
   "input_type": "upload",
-  "created_at": "...",
-  "completed_at": "...",
+  "source_image": { "width": 550, "height": 368 },
   "images": [
-    { "width": 400, "height": 400, "mode": "cover", "format": "webp", "url": "http://localhost:3000/images/1/1.webp", "file_size": 34521 }
+    {
+      "url": "http://localhost:3000/images/1/1.webp",
+      "download_url": "http://localhost:3000/api/v1/images/1/outputs/1/download",
+      "width": 400,
+      "height": 400,
+      "mode": "cover",
+      "format": "webp",
+      "file_size": 34521
+    }
   ],
-  "errors": []
+  "errors": [],
+  "created_at": "...",
+  "completed_at": "..."
 }
 ```
+
+`url` renders inline in a browser; `download_url` (`GET
+/api/v1/images/{id}/outputs/{outputId}/download`) sends
+`Content-Disposition: attachment` instead, so clicking it always downloads
+the file rather than displaying it.
 
 `status` is one of `pending`, `processing`, `completed`, `partially_completed`,
 `failed`. `errors` (only present when non-empty) lists sizes that
