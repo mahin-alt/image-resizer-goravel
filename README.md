@@ -117,6 +117,11 @@ request only becomes `failed` if none of its sizes succeeded.
 
 ### `POST /api/v1/images`
 
+Accepts a source image two ways - by URL or by local file upload - selected
+by `Content-Type`:
+
+**By URL** - `Content-Type: application/json`:
+
 ```json
 {
   "image_url": "https://example.com/photo.jpg",
@@ -128,7 +133,24 @@ request only becomes `failed` if none of its sizes succeeded.
 }
 ```
 
-Response `202`:
+**By file upload** - `Content-Type: multipart/form-data`, with a `data`
+text field holding that same JSON (`image_url` is optional here) plus an
+optional `image` file field:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/images \
+  -F 'data={"sizes":[{"width":400,"height":400,"mode":"cover"}]}' \
+  -F 'image=@photo.jpg'
+```
+
+If both `image_url` (inside `data`) and an `image` file are present in the
+same multipart request, **the uploaded file takes precedence** and
+`image_url` is silently ignored. The uploaded original is deleted once
+processing finishes - it isn't part of the retained/generated output set,
+only the generated WebP outputs are. Uploaded file size is capped by
+`MAX_IMAGE_FILE_SIZE`.
+
+Response `202` (either way):
 
 ```json
 { "id": 1, "status": "pending" }
@@ -144,6 +166,7 @@ entries; `mode` must be one of `contain`, `fit`, `cover`, `crop`, `fill`.
 {
   "id": 1,
   "status": "completed",
+  "input_type": "url",
   "source_url": "https://example.com/photo.jpg",
   "created_at": "...",
   "completed_at": "...",
@@ -155,16 +178,21 @@ entries; `mode` must be one of `contain`, `fit`, `cover`, `crop`, `fill`.
 ```
 
 `status` is one of `pending`, `processing`, `completed`, `partially_completed`,
-`failed`. `errors` (only present when non-empty) lists sizes that failed with
-a human-readable message.
+`failed`. `input_type` is `url` or `upload`; `source_url` is only present for
+`url` requests. `errors` (only present when non-empty) lists sizes that
+failed with a human-readable message.
 
 ## Retention and cleanup
 
 Every `ImageOutput` gets an `expires_at` computed at creation time from
-`IMAGE_RETENTION_HOURS` (default 24) - changing that env var later does not
-change the lifetime of images that already exist. `CleanupExpiredImagesJob`
-runs hourly (see `bootstrap/schedule.go`) on the dedicated `CLEANUP_QUEUE`, so
-a backlog of heavy processing work can never delay cleanup. It is idempotent
+`IMAGE_RETENTION_SECONDS` (default 86400, i.e. 24h) - changing that env var
+later does not change the lifetime of images that already exist.
+`CleanupExpiredImagesJob` runs every minute (see `bootstrap/schedule.go`) on
+the dedicated `CLEANUP_QUEUE`, so a backlog of heavy processing work can
+never delay cleanup. Because cleanup only checks once a minute, an output can
+live up to ~1 minute past its configured retention before it's actually
+deleted - that's the practical floor for how short `IMAGE_RETENTION_SECONDS`
+usefully goes without also tightening the schedule. It is idempotent
 and safe to run repeatedly or after a crash: a missing file or an
 already-gone row is not an error.
 
@@ -187,7 +215,7 @@ variables directly. See `.env.example` for the full list with comments.
 | Variable | Purpose |
 |---|---|
 | `IMAGE_DEFAULT_QUALITY`, `IMAGE_QUALITY_MIN`, `IMAGE_QUALITY_MAX` | WebP quality default and client-override bounds |
-| `IMAGE_RETENTION_HOURS` | Output lifetime, applied at creation time |
+| `IMAGE_RETENTION_SECONDS` | Output lifetime in seconds, applied at creation time |
 | `ALLOW_UPSCALE` | Global upscale default (overridable per size) |
 | `MAX_IMAGE_FILE_SIZE`, `MAX_SOURCE_DOWNLOAD_SIZE` | Download size caps |
 | `MAX_IMAGE_WIDTH`, `MAX_IMAGE_HEIGHT` | Source dimension caps |

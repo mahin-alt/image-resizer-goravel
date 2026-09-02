@@ -58,21 +58,31 @@ func (p *GovipsImageProcessor) Inspect(_ context.Context, sourcePath string) (So
 }
 
 func (p *GovipsImageProcessor) ProcessSizes(_ context.Context, sourcePath string, sizes []SizeSpec) ([]Output, []SizeError, error) {
-	// Decode once (autorotate; first-frame-only is already the default for
-	// multi-page loaders - see the Inspect comment above), reused for every
-	// requested size below - see the "decode once, resize many" rationale
-	// in the architecture plan.
-	params := vips.NewImportParams()
-	params.AutoRotate.Set(true)
-
-	// A throwaway load purely to validate the source decodes at all and to
-	// obtain its native dimensions for upscale decisions.
-	source, err := vips.LoadImageFromFile(sourcePath, params)
+	// A throwaway load purely to validate the source decodes at all, to
+	// obtain its native dimensions for upscale decisions, and to check its
+	// format (see below).
+	source, err := vips.NewImageFromFile(sourcePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decode source image: %w", err)
 	}
 	sourceWidth, sourceHeight := source.Width(), source.Height()
+	sourceFormat := source.Format()
 	source.Close()
+
+	// Decoded once per size below, reusing the same params - see the
+	// "decode once, resize many" rationale in the architecture plan.
+	//
+	// AutoRotate is only set when the format actually supports it: the
+	// libvips "autorotate" loader option only exists on jpegload/tiffload
+	// (confirmed via `vips jpegload`/`vips tiffload`/`vips webpload`/
+	// `vips heifload` --help). Setting it unconditionally breaks every
+	// other format with "no property named `autorotate'". Those other
+	// formats (WebP, PNG, GIF, HEIF) either don't carry EXIF orientation in
+	// a way libvips auto-applies at load time, or don't need it.
+	params := vips.NewImportParams()
+	if sourceFormat == vips.ImageTypeJPEG || sourceFormat == vips.ImageTypeTIFF {
+		params.AutoRotate.Set(true)
+	}
 
 	outputs := make([]Output, 0, len(sizes))
 	var sizeErrs []SizeError

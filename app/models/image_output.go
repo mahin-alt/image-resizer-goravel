@@ -9,7 +9,7 @@ import (
 // lives on disk (see app/storage) at StoragePath; only metadata and the path
 // are persisted here. ExpiresAt is computed once, at creation time, from the
 // retention period configured at that moment - it is never recomputed from
-// IMAGE_RETENTION_HOURS later, so changing that env var doesn't change the
+// IMAGE_RETENTION_SECONDS later, so changing that env var doesn't change the
 // lifetime of images that already exist.
 type ImageOutput struct {
 	orm.Model

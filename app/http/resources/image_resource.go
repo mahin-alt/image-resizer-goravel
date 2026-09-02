@@ -53,12 +53,25 @@ func RequestDetail(r *models.ImageProcessingRequest, sizes []models.ImageProcess
 	body := http.Json{
 		"id":         r.ID,
 		"status":     r.Status,
-		"source_url": r.SourceURL,
+		"input_type": r.InputType,
 		"created_at": r.CreatedAt,
 		"images":     images,
 	}
+	// source_url only applies to input_type "url" requests - omit it
+	// entirely for uploads instead of showing an empty string.
+	if r.InputType == models.InputTypeURL {
+		body["source_url"] = r.SourceURL
+	}
 	if r.CompletedAt != nil {
 		body["completed_at"] = r.CompletedAt
+	}
+	// Only known once the worker has downloaded and inspected the source
+	// (i.e. not while status is still "pending").
+	if r.SourceWidth != nil && r.SourceHeight != nil {
+		body["source_image"] = http.Json{
+			"width":  *r.SourceWidth,
+			"height": *r.SourceHeight,
+		}
 	}
 	if r.ErrorMessage != nil {
 		body["error_message"] = *r.ErrorMessage

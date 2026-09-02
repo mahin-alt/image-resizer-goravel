@@ -32,10 +32,12 @@ func ClampQuality(requested *int) int {
 	return q
 }
 
-func RetentionHours() int { return facades.Config().GetInt("image.retention_hours", 24) }
+func RetentionSeconds() int {
+	return facades.Config().GetInt("image.retention_seconds", 86400)
+}
 
 func RetentionDuration() time.Duration {
-	return time.Duration(RetentionHours()) * time.Hour
+	return time.Duration(RetentionSeconds()) * time.Second
 }
 
 func AllowUpscaleDefault() bool { return facades.Config().GetBool("image.allow_upscale", false) }

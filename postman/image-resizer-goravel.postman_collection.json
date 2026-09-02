@@ -1,0 +1,167 @@
+{
+	"info": {
+		"name": "image-resizer-goravel",
+		"description": "Self-hosted image processing API (Goravel + govips/libvips). Submit a source image URL + requested sizes, poll for the generated WebP outputs. See README.md for full API/config docs.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://127.0.0.1:3000",
+			"type": "string"
+		},
+		{
+			"key": "request_id",
+			"value": "1",
+			"type": "string",
+			"description": "Set this to the \"id\" returned by Create Image Request, then use Get Image Request to poll it."
+		}
+	],
+	"item": [
+		{
+			"name": "Create Image Request - single size",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"image_url\": \"https://www.gstatic.com/webp/gallery/1.jpg\",\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100, \"mode\": \"cover\" }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/images",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "v1", "images" ]
+				},
+				"description": "Returns 202 with { id, status: \"pending\" }. Copy the returned id into the request_id collection variable to use it with Get Image Request."
+			}
+		},
+		{
+			"name": "Create Image Request - multiple sizes/modes",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"image_url\": \"https://www.gstatic.com/webp/gallery/1.jpg\",\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"cover\" },\n    { \"width\": 800, \"height\": 600, \"mode\": \"contain\" },\n    { \"width\": 1200, \"height\": 900, \"mode\": \"fill\", \"allow_upscale\": true, \"quality\": 90 }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/images",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "v1", "images" ]
+				},
+				"description": "Demonstrates all optional per-size fields: mode, allow_upscale override, and quality override."
+			}
+		},
+		{
+			"name": "Create Image Request - size matrix (tiny to huge, upscale test)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"image_url\": \"https://www.gstatic.com/webp/gallery/1.jpg\",\n  \"sizes\": [\n    { \"width\": 10, \"height\": 10, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 50, \"height\": 50, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 150, \"height\": 150, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 400, \"height\": 400, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 800, \"height\": 800, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 1600, \"height\": 1600, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 3200, \"height\": 3200, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 6000, \"height\": 6000, \"mode\": \"contain\", \"allow_upscale\": true }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/images",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "v1", "images" ]
+				},
+				"description": "Same source image run through 8 sizes from 10x10 up to 6000x6000, all with allow_upscale forced to true. The small sizes exercise the downscale path; the sizes larger than the source image's own dimensions (check the response's \"source_image\" field) exercise the upscale path. All use \"contain\" so only pure scaling is being compared, no cropping/stretching. Poll with Get Image Request afterwards and compare each output's actual width/height (and the source_image field) to see which sizes upscaled vs downscaled."
+			}
+		},
+		{
+			"name": "Create Image Request - file upload (multipart)",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"type": "text",
+							"value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"cover\" },\n    { \"width\": 800, \"height\": 600, \"mode\": \"contain\" }\n  ]\n}"
+						},
+						{
+							"key": "image",
+							"type": "file",
+							"src": []
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/images",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "v1", "images" ]
+				},
+				"description": "Local file upload instead of a URL. The \"data\" field holds the same JSON shape as the plain-JSON request (image_url omitted here since a file is provided). Click the \"image\" field's Select Files button in Postman and pick a local image before sending. Returns 202 with { id, status: \"pending\" } - the response's later \"input_type\" will be \"upload\" and \"source_url\" will be absent."
+			}
+		},
+		{
+			"name": "Create Image Request - both image_url and file (file wins)",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "data",
+							"type": "text",
+							"value": "{\n  \"image_url\": \"https://www.gstatic.com/webp/gallery/2.jpg\",\n  \"sizes\": [\n    { \"width\": 200, \"height\": 200, \"mode\": \"cover\" }\n  ]\n}"
+						},
+						{
+							"key": "image",
+							"type": "file",
+							"src": []
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/images",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "v1", "images" ]
+				},
+				"description": "Demonstrates the precedence rule: when both image_url (inside \"data\") and an uploaded \"image\" file are present, the uploaded file wins and image_url is silently ignored. Select a local file for \"image\" before sending, then compare the polled result's source_image dimensions against the file you picked (not gallery/2.jpg) to confirm."
+			}
+		},
+		{
+			"name": "Create Image Request - validation error",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"image_url\": \"not-a-url\",\n  \"sizes\": []\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/images",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "v1", "images" ]
+				},
+				"description": "Expected: 422 with an { errors: {...} } body - invalid image_url and an empty sizes array."
+			}
+		},
+		{
+			"name": "Get Image Request",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/v1/images/{{request_id}}",
+					"host": [ "{{base_url}}" ],
+					"path": [ "api", "v1", "images", "{{request_id}}" ]
+				},
+				"description": "Poll this until status is \"completed\" or \"partially_completed\". Each entry in \"images\" has a \"url\" you can open directly to view the generated WebP."
+			}
+		}
+	]
+}

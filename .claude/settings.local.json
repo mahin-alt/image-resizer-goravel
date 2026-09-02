@@ -59,7 +59,32 @@
       "Bash(awk '{print $2}')",
       "Bash(echo \"exit code: $?\")",
       "Bash(mysql -u root -proot -e \"SELECT VERSION\\(\\); SELECT 1;\")",
-      "Bash(mysql -u root -proot -e \"SHOW DATABASES LIKE 'image_resizer';\")"
+      "Bash(mysql -u root -proot -e \"SHOW DATABASES LIKE 'image_resizer';\")",
+      "Bash(python3 -c \"import json; json.load\\(open\\('/home/mahin/code/image-resizer-goravel/postman/image-resizer-goravel.postman_collection.json'\\)\\); print\\('valid JSON'\\)\")",
+      "Bash(mysql -u root -proot image_resizer -e \"DESCRIBE image_processing_requests;\")",
+      "Bash(curl -s http://127.0.0.1:3000/ -m 2)",
+      "Bash(curl -s -X POST http://127.0.0.1:3000/api/v1/images -H 'Content-Type: application/json' -d '{\"image_url\":\"https://www.gstatic.com/webp/gallery/1.jpg\",\"sizes\":[{\"width\":100,\"height\":100,\"mode\":\"cover\"}]}' -m 5)",
+      "Bash(curl -s http://127.0.0.1:3000/api/v1/images/3 -m 5)",
+      "Bash(mysql -u root -proot image_resizer -e \"SELECT id, status, source_width, source_height FROM image_processing_requests WHERE id=4;\")",
+      "Bash(mysql -u root -proot image_resizer -e \"SELECT id, source_width, source_height FROM image_processing_requests WHERE id=5;\")",
+      "Bash(curl -s http://127.0.0.1:3001/api/v1/images/6)",
+      "Bash(mysql -u root -proot image_resizer -e \"SELECT id, status, source_width, source_height FROM image_processing_requests WHERE id=6;\")",
+      "Bash(curl -s http://127.0.0.1:3001/api/v1/images/7)",
+      "Bash(mysql -u root -proot image_resizer -e \"SELECT id, status, source_width, source_height FROM image_processing_requests WHERE id=8;\")",
+      "Bash(grep -E \"exe/goravel|exe/[a-z]+$\")",
+      "Bash(kill 145830)",
+      "Bash(fuser -k 3001/tcp)",
+      "Bash(rm -f /tmp/verify.log)",
+      "Bash(mysql -u root -proot image_resizer -e \"SELECT id, status, source_width, source_height FROM image_processing_requests;\")",
+      "Bash(curl -s http://127.0.0.1:3000/ -m 2 -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(fuser -k 3001/tcp 2>&1 *)",
+      "Bash(vips jpegload *)",
+      "Bash(vips pngload *)",
+      "Bash(vips tiffload *)",
+      "Bash(vips heifload *)",
+      "Bash(grep -n \"ImageTypeJPEG\\\\|ImageTypeTIFF\\\\|ImageTypeWEBP\\\\|ImageTypePNG\\\\|ImageTypeGIF\\\\|ImageTypeHEIF\\\\|type ImageType \" /home/mahin/go/pkg/mod/github.com/davidbyttow/govips/v2@v2.18.0/vips/*.go 2>/dev/null)",
+      "Bash(ps -p 25401 -o pid,lstart,cmd)",
+      "Bash(kill 25401)"
     ]
   }
 }

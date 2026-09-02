@@ -26,7 +26,7 @@ func init() {
 		// How long a generated output stays available after creation, and
 		// therefore how expires_at is computed at creation time (never
 		// recomputed later from this value).
-		"retention_hours": config.Env("IMAGE_RETENTION_HOURS", 24),
+		"retention_seconds": config.Env("IMAGE_RETENTION_SECONDS", 86400),
 
 		// Whether outputs may be enlarged beyond the source image's
 		// dimensions by default. A request can override this per size.

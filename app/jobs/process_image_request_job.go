@@ -81,7 +81,7 @@ func (r *ProcessImageRequestJob) Handle(args ...any) error {
 	}
 
 	startedAt := carbon.NewDateTime(carbon.Now())
-	if _, err := facades.Orm().Query().Model(&request).Update(map[string]any{
+	if err := updateRequest(request.ID, map[string]any{
 		"status":     models.RequestStatusProcessing,
 		"started_at": startedAt,
 	}); err != nil {
@@ -98,21 +98,30 @@ func (r *ProcessImageRequestJob) Handle(args ...any) error {
 
 	ctx := context.Background()
 
-	result, err := download.Download(ctx, request.SourceURL)
+	sourcePath, cleanupSource, err := r.resolveSource(ctx, &request)
 	if err != nil {
 		if isPermanentDownloadError(err) {
 			return r.fail(&request, permanent(err))
 		}
 		return r.fail(&request, err) // let it retry
 	}
-	defer os.Remove(result.Path)
+	defer cleanupSource()
 
 	processor := imageprocessing.NewGovipsImageProcessor()
 
-	info, err := processor.Inspect(ctx, result.Path)
+	info, err := processor.Inspect(ctx, sourcePath)
 	if err != nil {
 		return r.fail(&request, permanent(fmt.Errorf("invalid image: %w", err)))
 	}
+
+	sourceWidth, sourceHeight := info.Width, info.Height
+	if err := updateRequest(request.ID, map[string]any{
+		"source_width":  &sourceWidth,
+		"source_height": &sourceHeight,
+	}); err != nil {
+		return fmt.Errorf("record source dimensions: %w", err)
+	}
+
 	if info.Width > imageconfig.MaxImageWidth() || info.Height > imageconfig.MaxImageHeight() {
 		return r.fail(&request, permanent(fmt.Errorf(
 			"source image %dx%d exceeds the configured maximum of %dx%d",
@@ -135,7 +144,7 @@ func (r *ProcessImageRequestJob) Handle(args ...any) error {
 		})
 	}
 
-	outputs, sizeErrs, err := processor.ProcessSizes(ctx, result.Path, specs)
+	outputs, sizeErrs, err := processor.ProcessSizes(ctx, sourcePath, specs)
 	if err != nil {
 		return r.fail(&request, permanent(fmt.Errorf("processing failed: %w", err)))
 	}
@@ -161,11 +170,36 @@ func (r *ProcessImageRequestJob) Handle(args ...any) error {
 		finalStatus = models.RequestStatusPartiallyCompleted
 	}
 
-	_, err = facades.Orm().Query().Model(&request).Update(map[string]any{
+	return updateRequest(request.ID, map[string]any{
 		"status":       finalStatus,
 		"completed_at": carbon.NewDateTime(carbon.Now()),
 	})
-	return err
+}
+
+// resolveSource gets a local filesystem path to the source image, however
+// it was supplied, plus a cleanup func the caller must defer. For
+// InputTypeURL it downloads to a temp file (existing behavior); for
+// InputTypeUpload it resolves the already-stored upload and removes its
+// uploads/{id} directory once processing is done with it - uploaded
+// originals aren't part of the retained/generated output set, so they don't
+// need to hang around after the job finishes.
+func (r *ProcessImageRequestJob) resolveSource(ctx context.Context, request *models.ImageProcessingRequest) (path string, cleanup func(), err error) {
+	switch request.InputType {
+	case models.InputTypeUpload:
+		if request.SourceFilePath == nil || *request.SourceFilePath == "" {
+			return "", func() {}, fmt.Errorf("upload request %d has no stored source file", request.ID)
+		}
+		dir := storage.UploadDir(request.ID)
+		return storage.Path(*request.SourceFilePath), func() {
+			_ = storage.DeleteDirectory(dir)
+		}, nil
+	default:
+		result, err := download.Download(ctx, request.SourceURL)
+		if err != nil {
+			return "", func() {}, err
+		}
+		return result.Path, func() { _ = os.Remove(result.Path) }, nil
+	}
 }
 
 // persistOutput is idempotent: a retry that re-runs this size will find the
@@ -187,7 +221,7 @@ func (r *ProcessImageRequestJob) persistOutput(request *models.ImageProcessingRe
 		Mode:                         out.Mode,
 		Format:                       "webp",
 		FileSize:                     int64(len(out.Bytes)),
-		ExpiresAt:                    carbon.NewDateTime(carbon.Now().AddHours(imageconfig.RetentionHours())),
+		ExpiresAt:                    carbon.NewDateTime(carbon.Now().AddSeconds(imageconfig.RetentionSeconds())),
 	}
 	if err := facades.Orm().Query().Create(output); err != nil {
 		return fmt.Errorf("create output row: %w", err)
@@ -201,7 +235,8 @@ func (r *ProcessImageRequestJob) persistOutput(request *models.ImageProcessingRe
 		return fmt.Errorf("store output file: %w", err)
 	}
 
-	if _, err := facades.Orm().Query().Model(output).Update("storage_path", path); err != nil {
+	if _, err := facades.Orm().Query().Model(&models.ImageOutput{}).Where("id", output.ID).
+		Update("storage_path", path); err != nil {
 		return fmt.Errorf("record storage path: %w", err)
 	}
 
@@ -211,11 +246,25 @@ func (r *ProcessImageRequestJob) persistOutput(request *models.ImageProcessingRe
 
 func (r *ProcessImageRequestJob) fail(request *models.ImageProcessingRequest, err error) error {
 	msg := err.Error()
-	_, _ = facades.Orm().Query().Model(request).Update(map[string]any{
+	_ = updateRequest(request.ID, map[string]any{
 		"status":        models.RequestStatusFailed,
 		"error_message": msg,
 		"completed_at":  carbon.NewDateTime(carbon.Now()),
 	})
+	return err
+}
+
+// updateRequest updates image_processing_requests by id against a fresh,
+// unloaded model rather than a previously-Select()'d struct (the pattern
+// already used by markSizeFailed/markSizeCompleted below). Using an already
+// -loaded *ImageProcessingRequest with .Model() intermittently dropped some
+// map fields from the generated UPDATE in testing; scoping purely by
+// Where("id", ...) against an empty model avoids whatever GORM state that
+// loaded struct was carrying and reliably writes every key in the map.
+func updateRequest(id uint, values map[string]any) error {
+	_, err := facades.Orm().Query().Model(&models.ImageProcessingRequest{}).
+		Where("id", id).
+		Update(values)
 	return err
 }
 
