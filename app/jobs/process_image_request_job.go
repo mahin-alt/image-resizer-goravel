@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"goravel/app/facades"
 	"goravel/app/models"
 	"goravel/app/storage"
 	"goravel/app/support/imageconfig"
-	"goravel/internal/download"
 	"goravel/internal/imageprocessing"
 
 	"github.com/goravel/framework/support/carbon"
@@ -33,10 +31,10 @@ func permanent(err error) error {
 }
 
 // ProcessImageRequestJob is the single job that handles one
-// ImageProcessingRequest end to end: download the source once, decode it
-// once, generate every requested size from that one decode, persist each
-// output, and finalize the request's status. See the plan's "one job per
-// request" rationale for why this isn't split per-size.
+// ImageProcessingRequest end to end: decode the uploaded source once,
+// generate every requested size from that one decode, persist each output,
+// and finalize the request's status. See the plan's "one job per request"
+// rationale for why this isn't split per-size.
 type ProcessImageRequestJob struct{}
 
 func (r *ProcessImageRequestJob) Signature() string {
@@ -44,9 +42,9 @@ func (r *ProcessImageRequestJob) Signature() string {
 }
 
 // ShouldRetry stops Goravel from retrying validation-shaped failures
-// (unsupported format, corrupt image, bad URL) - those will never succeed on
-// a retry. Transient failures (timeouts, network errors) fall through to the
-// framework's default retry/backoff behavior.
+// (unsupported format, corrupt/missing image) - those will never succeed on
+// a retry. Transient failures fall through to the framework's default
+// retry/backoff behavior.
 func (r *ProcessImageRequestJob) ShouldRetry(err error, attempt, maxTries int) (bool, time.Duration) {
 	var perm *permanentError
 	if errors.As(err, &perm) {
@@ -98,12 +96,11 @@ func (r *ProcessImageRequestJob) Handle(args ...any) error {
 
 	ctx := context.Background()
 
-	sourcePath, cleanupSource, err := r.resolveSource(ctx, &request)
+	sourcePath, cleanupSource, err := r.resolveSource(&request)
 	if err != nil {
-		if isPermanentDownloadError(err) {
-			return r.fail(&request, permanent(err))
-		}
-		return r.fail(&request, err) // let it retry
+		// A missing/invalid stored upload is never something a retry
+		// fixes.
+		return r.fail(&request, permanent(err))
 	}
 	defer cleanupSource()
 
@@ -176,30 +173,19 @@ func (r *ProcessImageRequestJob) Handle(args ...any) error {
 	})
 }
 
-// resolveSource gets a local filesystem path to the source image, however
-// it was supplied, plus a cleanup func the caller must defer. For
-// InputTypeURL it downloads to a temp file (existing behavior); for
-// InputTypeUpload it resolves the already-stored upload and removes its
+// resolveSource gets a local filesystem path to the uploaded source image,
+// plus a cleanup func the caller must defer that removes its
 // uploads/{id} directory once processing is done with it - uploaded
 // originals aren't part of the retained/generated output set, so they don't
 // need to hang around after the job finishes.
-func (r *ProcessImageRequestJob) resolveSource(ctx context.Context, request *models.ImageProcessingRequest) (path string, cleanup func(), err error) {
-	switch request.InputType {
-	case models.InputTypeUpload:
-		if request.SourceFilePath == nil || *request.SourceFilePath == "" {
-			return "", func() {}, fmt.Errorf("upload request %d has no stored source file", request.ID)
-		}
-		dir := storage.UploadDir(request.ID)
-		return storage.Path(*request.SourceFilePath), func() {
-			_ = storage.DeleteDirectory(dir)
-		}, nil
-	default:
-		result, err := download.Download(ctx, request.SourceURL)
-		if err != nil {
-			return "", func() {}, err
-		}
-		return result.Path, func() { _ = os.Remove(result.Path) }, nil
+func (r *ProcessImageRequestJob) resolveSource(request *models.ImageProcessingRequest) (path string, cleanup func(), err error) {
+	if request.SourceFilePath == nil || *request.SourceFilePath == "" {
+		return "", func() {}, fmt.Errorf("request %d has no stored source file", request.ID)
 	}
+	dir := storage.UploadDir(request.ID)
+	return storage.Path(*request.SourceFilePath), func() {
+		_ = storage.DeleteDirectory(dir)
+	}, nil
 }
 
 // persistOutput is idempotent: a retry that re-runs this size will find the
@@ -278,11 +264,4 @@ func markSizeCompleted(sizeID uint) {
 	_, _ = facades.Orm().Query().Model(&models.ImageProcessingRequestSize{}).
 		Where("id", sizeID).
 		Update(map[string]any{"status": models.SizeStatusCompleted})
-}
-
-func isPermanentDownloadError(err error) bool {
-	return errors.Is(err, download.ErrUnsupportedScheme) ||
-		errors.Is(err, download.ErrBadStatus) ||
-		errors.Is(err, download.ErrResponseTooLarge) ||
-		errors.Is(err, download.ErrTooManyRedirects)
 }

@@ -1,7 +1,7 @@
 {
 	"info": {
 		"name": "image-resizer-goravel",
-		"description": "Self-hosted image processing API (Goravel + govips/libvips). Submit a source image URL + requested sizes, poll for the generated WebP outputs. See README.md for full API/config docs.",
+		"description": "Self-hosted image processing API (Goravel + govips/libvips). Upload a source image file + requested sizes, poll for the generated WebP outputs. See README.md for full API/config docs. Every \"Create Image Request\" call needs a local file picked for the \"image\" field - click it in Postman and use Select Files before sending.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -14,141 +14,250 @@
 			"key": "request_id",
 			"value": "1",
 			"type": "string",
-			"description": "Set this to the \"id\" returned by Create Image Request, then use Get Image Request to poll it."
+			"description": "Set this to the \"id\" returned by a Create Image Request call, then use Get Image Request to poll it."
 		}
 	],
 	"item": [
 		{
-			"name": "Create Image Request - single size",
-			"request": {
-				"method": "POST",
-				"header": [
-					{ "key": "Content-Type", "value": "application/json" }
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"image_url\": \"https://www.gstatic.com/webp/gallery/1.jpg\",\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100, \"mode\": \"cover\" }\n  ]\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/images",
-					"host": [ "{{base_url}}" ],
-					"path": [ "api", "v1", "images" ]
-				},
-				"description": "Returns 202 with { id, status: \"pending\" }. Copy the returned id into the request_id collection variable to use it with Get Image Request."
-			}
-		},
-		{
-			"name": "Create Image Request - multiple sizes/modes",
-			"request": {
-				"method": "POST",
-				"header": [
-					{ "key": "Content-Type", "value": "application/json" }
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"image_url\": \"https://www.gstatic.com/webp/gallery/1.jpg\",\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"cover\" },\n    { \"width\": 800, \"height\": 600, \"mode\": \"contain\" },\n    { \"width\": 1200, \"height\": 900, \"mode\": \"fill\", \"allow_upscale\": true, \"quality\": 90 }\n  ]\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/images",
-					"host": [ "{{base_url}}" ],
-					"path": [ "api", "v1", "images" ]
-				},
-				"description": "Demonstrates all optional per-size fields: mode, allow_upscale override, and quality override."
-			}
-		},
-		{
-			"name": "Create Image Request - size matrix (tiny to huge, upscale test)",
-			"request": {
-				"method": "POST",
-				"header": [
-					{ "key": "Content-Type", "value": "application/json" }
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"image_url\": \"https://www.gstatic.com/webp/gallery/1.jpg\",\n  \"sizes\": [\n    { \"width\": 10, \"height\": 10, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 50, \"height\": 50, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 150, \"height\": 150, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 400, \"height\": 400, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 800, \"height\": 800, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 1600, \"height\": 1600, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 3200, \"height\": 3200, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 6000, \"height\": 6000, \"mode\": \"contain\", \"allow_upscale\": true }\n  ]\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/images",
-					"host": [ "{{base_url}}" ],
-					"path": [ "api", "v1", "images" ]
-				},
-				"description": "Same source image run through 8 sizes from 10x10 up to 6000x6000, all with allow_upscale forced to true. The small sizes exercise the downscale path; the sizes larger than the source image's own dimensions (check the response's \"source_image\" field) exercise the upscale path. All use \"contain\" so only pure scaling is being compared, no cropping/stretching. Poll with Get Image Request afterwards and compare each output's actual width/height (and the source_image field) to see which sizes upscaled vs downscaled."
-			}
-		},
-		{
-			"name": "Create Image Request - file upload (multipart)",
-			"request": {
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "formdata",
-					"formdata": [
-						{
-							"key": "data",
-							"type": "text",
-							"value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"cover\" },\n    { \"width\": 800, \"height\": 600, \"mode\": \"contain\" }\n  ]\n}"
+			"name": "Resize modes",
+			"description": "One request per resize mode, all using the same target box (400x400 or 400x200 where relevant) on the same uploaded image, so you can directly compare what each mode literally does to it.",
+			"item": [
+				{
+					"name": "Contain (fit) - fits inside the box, no crop, no stretch",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"contain\" }\n  ]\n}" },
+								{ "key": "image", "type": "file", "src": [] }
+							]
 						},
-						{
-							"key": "image",
-							"type": "file",
-							"src": []
-						}
-					]
-				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/images",
-					"host": [ "{{base_url}}" ],
-					"path": [ "api", "v1", "images" ]
-				},
-				"description": "Local file upload instead of a URL. The \"data\" field holds the same JSON shape as the plain-JSON request (image_url omitted here since a file is provided). Click the \"image\" field's Select Files button in Postman and pick a local image before sending. Returns 202 with { id, status: \"pending\" } - the response's later \"input_type\" will be \"upload\" and \"source_url\" will be absent."
-			}
-		},
-		{
-			"name": "Create Image Request - both image_url and file (file wins)",
-			"request": {
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "formdata",
-					"formdata": [
-						{
-							"key": "data",
-							"type": "text",
-							"value": "{\n  \"image_url\": \"https://www.gstatic.com/webp/gallery/2.jpg\",\n  \"sizes\": [\n    { \"width\": 200, \"height\": 200, \"mode\": \"cover\" }\n  ]\n}"
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
 						},
-						{
-							"key": "image",
-							"type": "file",
-							"src": []
-						}
-					]
+						"description": "contain (alias: fit): shrinks the whole image to fit entirely inside 400x400, preserving aspect ratio. Nothing is cropped and nothing is stretched - the result may come out smaller than the box on one axis (e.g. 400x268 for a landscape photo). Poll with Get Image Request and check the output's actual width/height: at most one of them will be 400."
+					}
 				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/images",
-					"host": [ "{{base_url}}" ],
-					"path": [ "api", "v1", "images" ]
+				{
+					"name": "Cover - fills the box, smart-crops the overflow",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"cover\" }\n  ]\n}" },
+								{ "key": "image", "type": "file", "src": [] }
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
+						},
+						"description": "cover: fills the 400x400 box exactly (both dimensions always come out 400x400), cropping away whatever overflows - but the crop is biased toward the image's most visually 'interesting' region (faces/detail get kept in frame) rather than a plain center crop. Compare the output visually against \"Crop\" below on an off-center subject to see the difference."
+					}
 				},
-				"description": "Demonstrates the precedence rule: when both image_url (inside \"data\") and an uploaded \"image\" file are present, the uploaded file wins and image_url is silently ignored. Select a local file for \"image\" before sending, then compare the polled result's source_image dimensions against the file you picked (not gallery/2.jpg) to confirm."
-			}
+				{
+					"name": "Crop - fills the box, fixed center-crops the overflow",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"crop\" }\n  ]\n}" },
+								{ "key": "image", "type": "file", "src": [] }
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
+						},
+						"description": "crop: fills the 400x400 box exactly, same as cover, but the crop is always a plain fixed center crop - no saliency/face detection. Cheaper and more predictable than cover, but can cut off an off-center subject that cover would have kept in frame."
+					}
+				},
+				{
+					"name": "Fill - stretches to the exact size (distorts aspect ratio)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 200, \"mode\": \"fill\" }\n  ]\n}" },
+								{ "key": "image", "type": "file", "src": [] }
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
+						},
+						"description": "fill: forces the image to exactly 400x200 regardless of its own aspect ratio. This is the ONLY mode that stretches/squashes the image - nothing is cropped, but circles become ellipses etc. Deliberately using a non-square 400x200 box here (rather than 400x400) makes the distortion obvious when you view the output."
+					}
+				}
+			]
 		},
 		{
-			"name": "Create Image Request - validation error",
-			"request": {
-				"method": "POST",
-				"header": [
-					{ "key": "Content-Type", "value": "application/json" }
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"image_url\": \"not-a-url\",\n  \"sizes\": []\n}"
+			"name": "Upscaling",
+			"description": "Same source image, sizes both smaller and larger than it - showing what allow_upscale actually controls.",
+			"item": [
+				{
+					"name": "Upscale disabled (default) - large sizes are capped at the source's own dimensions",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100, \"mode\": \"contain\" },\n    { \"width\": 6000, \"height\": 6000, \"mode\": \"contain\" }\n  ]\n}" },
+								{ "key": "image", "type": "file", "src": [] }
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
+						},
+						"description": "allow_upscale is omitted here, so it falls back to the ALLOW_UPSCALE env default (false unless you changed it). The 100x100 size shrinks normally; the 6000x6000 size will NOT enlarge past the source image's own dimensions (check the response's \"source_image\" field vs the output's actual width/height - they'll be capped at the source's size, not 6000x6000)."
+					}
 				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/images",
-					"host": [ "{{base_url}}" ],
-					"path": [ "api", "v1", "images" ]
+				{
+					"name": "Upscale enabled per-size - large sizes actually enlarge",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 6000, \"height\": 6000, \"mode\": \"contain\", \"allow_upscale\": true }\n  ]\n}" },
+								{ "key": "image", "type": "file", "src": [] }
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
+						},
+						"description": "Same two sizes as above, but with \"allow_upscale\": true on each. This time the 6000x6000 output will actually be enlarged past the source's own dimensions (ordinary interpolation, not AI upscaling) - compare against the \"disabled\" request above."
+					}
 				},
-				"description": "Expected: 422 with an { errors: {...} } body - invalid image_url and an empty sizes array."
-			}
+				{
+					"name": "Size matrix - tiny to huge (8 sizes, upscale forced on)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 10, \"height\": 10, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 50, \"height\": 50, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 150, \"height\": 150, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 400, \"height\": 400, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 800, \"height\": 800, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 1600, \"height\": 1600, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 3200, \"height\": 3200, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 6000, \"height\": 6000, \"mode\": \"contain\", \"allow_upscale\": true }\n  ]\n}" },
+								{ "key": "image", "type": "file", "src": [] }
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
+						},
+						"description": "The same uploaded image run through 8 sizes from 10x10 up to 6000x6000, all with allow_upscale forced to true. The small sizes exercise the downscale path; the sizes larger than the source image's own dimensions (check the response's \"source_image\" field) exercise the upscale path. All use \"contain\" so only pure scaling is being compared, no cropping/stretching."
+					}
+				}
+			]
+		},
+		{
+			"name": "WebP quality",
+			"description": "Same dimensions, different \"quality\" overrides - shows the filesize/fidelity tradeoff independent of resizing.",
+			"item": [
+				{
+					"name": "Quality comparison - low (10) vs default vs high (100)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 500, \"height\": 500, \"mode\": \"cover\", \"quality\": 10 },\n    { \"width\": 500, \"height\": 500, \"mode\": \"cover\" },\n    { \"width\": 500, \"height\": 500, \"mode\": \"cover\", \"quality\": 100 }\n  ]\n}" },
+								{ "key": "image", "type": "file", "src": [] }
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
+						},
+						"description": "Three identical 500x500 cover crops, differing only in WebP quality: 10 (visibly blocky, smallest file), the server default (IMAGE_DEFAULT_QUALITY, currently 80), and 100 (best fidelity, largest file). 0 and 100 are libvips' actual supported floor/ceiling (see IMAGE_QUALITY_MIN/MAX in .env.example) - quality is a pure encode-fidelity/filesize tradeoff, it never changes pixel dimensions. Poll and compare each output's file_size."
+					}
+				}
+			]
+		},
+		{
+			"name": "Errors",
+			"item": [
+				{
+					"name": "Missing image file",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100 }\n  ]\n}" }
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
+						},
+						"description": "No \"image\" field at all. Expected: 422 with { \"errors\": { \"image\": [...] } }."
+					}
+				},
+				{
+					"name": "Missing data field",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "image", "type": "file", "src": [] }
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
+						},
+						"description": "A file is attached but there's no \"data\" field. Expected: 422 with { \"errors\": { \"data\": [...] } }. Pick any local file for \"image\" before sending."
+					}
+				},
+				{
+					"name": "Invalid sizes (too many, bad mode)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100, \"mode\": \"stretch-to-infinity\" }\n  ]\n}" },
+								{ "key": "image", "type": "file", "src": [] }
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/images",
+							"host": [ "{{base_url}}" ],
+							"path": [ "api", "v1", "images" ]
+						},
+						"description": "\"mode\" isn't one of contain/fit/cover/crop/fill. Expected: 422 with { \"errors\": { \"sizes.0.mode\": [...] } }."
+					}
+				}
+			]
 		},
 		{
 			"name": "Get Image Request",
@@ -160,7 +269,7 @@
 					"host": [ "{{base_url}}" ],
 					"path": [ "api", "v1", "images", "{{request_id}}" ]
 				},
-				"description": "Poll this until status is \"completed\" or \"partially_completed\". Each entry in \"images\" has a \"url\" you can open directly to view the generated WebP."
+				"description": "Poll this until status is \"completed\" or \"partially_completed\". Each entry in \"images\" has a \"url\" you can open directly to view the generated WebP. Update the request_id collection variable to the id returned by whichever Create request you just ran."
 			}
 		}
 	]

@@ -24,7 +24,7 @@ func TestClampQuality(t *testing.T) {
 	}{
 		{"nil uses default", nil, imageconfig.DefaultQuality()},
 		{"within range kept", intPtr(70), 70},
-		{"below min clamped", intPtr(1), imageconfig.QualityMin()},
+		{"below min clamped", intPtr(-5), imageconfig.QualityMin()},
 		{"above max clamped", intPtr(1000), imageconfig.QualityMax()},
 	}
 

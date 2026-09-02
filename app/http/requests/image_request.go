@@ -1,9 +1,9 @@
 package requests
 
-// CreateImageRequestBody is the JSON body for POST /api/v1/images.
+// CreateImageRequestBody is the "data" field's JSON shape for
+// POST /api/v1/images (multipart/form-data - see the controller).
 type CreateImageRequestBody struct {
-	ImageURL string          `json:"image_url" form:"image_url"`
-	Sizes    []RequestedSize `json:"sizes" form:"sizes"`
+	Sizes []RequestedSize `json:"sizes" form:"sizes"`
 }
 
 type RequestedSize struct {

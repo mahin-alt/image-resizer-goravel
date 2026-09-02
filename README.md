@@ -1,11 +1,11 @@
 # image-resizer-goravel
 
-A self-hosted, headless image-processing API. It accepts a source image URL
-and a list of requested output sizes, downloads and processes the image
+A self-hosted, headless image-processing API. It accepts a source image as a
+local file upload and a list of requested output sizes, processes the image
 locally with [govips](https://github.com/davidbyttow/govips)/[libvips](https://www.libvips.org/),
 converts every output to WebP, stores the files on the local filesystem, and
 returns JSON with URLs to the generated files. There is no GUI, no
-authentication, and no rate limiting - see "Known limitations" below.
+authentication, and no rate limiting.
 
 Built on [Goravel](https://www.goravel.dev/) v1.18.
 
@@ -19,7 +19,7 @@ Client
   <- 202 { id, status: "pending" }
 
 Worker (image_processing queue)
-  -> download source once                (internal/download)
+  -> read uploaded source once           (app/storage)
   -> decode once, autorotate, first-frame-only
   -> for each requested size:
        govips thumbnail (mode-specific)  (internal/imageprocessing)
@@ -49,10 +49,10 @@ every requested size from that single decode, rather than dispatching a
 separate job per size. Reasoning:
 
 - **Decode once, resize many.** govips/libvips can produce multiple resized
-  outputs from one decoded source without re-downloading or re-decoding.
-  Splitting into per-size jobs would mean either re-downloading/re-decoding
-  per job, or shipping decoded pixel data between jobs - both far more
-  expensive than keeping the source open for one job's lifetime.
+  outputs from one decoded source without re-reading or re-decoding it.
+  Splitting into per-size jobs would mean either re-decoding per job, or
+  shipping decoded pixel data between jobs - both far more expensive than
+  keeping the source open for one job's lifetime.
 - **libvips is already internally multi-threaded** per operation
   (`VIPS_CONCURRENCY`, see "Worker concurrency" below). Stacking another
   layer of per-size job parallelism on top would multiply thread contention
@@ -117,40 +117,23 @@ request only becomes `failed` if none of its sizes succeeded.
 
 ### `POST /api/v1/images`
 
-Accepts a source image two ways - by URL or by local file upload - selected
-by `Content-Type`:
-
-**By URL** - `Content-Type: application/json`:
-
-```json
-{
-  "image_url": "https://example.com/photo.jpg",
-  "sizes": [
-    { "width": 400, "height": 400, "mode": "cover" },
-    { "width": 800, "height": 600 },
-    { "width": 1200, "height": 900, "allow_upscale": true, "quality": 90 }
-  ]
-}
-```
-
-**By file upload** - `Content-Type: multipart/form-data`, with a `data`
-text field holding that same JSON (`image_url` is optional here) plus an
-optional `image` file field:
+The source image is always a local file upload - `Content-Type:
+multipart/form-data`, with an `image` file field plus a `data` text field
+holding `{ "sizes": [...] }` as a JSON string:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/images \
-  -F 'data={"sizes":[{"width":400,"height":400,"mode":"cover"}]}' \
+  -F 'data={"sizes":[{"width":400,"height":400,"mode":"cover"},{"width":800,"height":600},{"width":1200,"height":900,"allow_upscale":true,"quality":90}]}' \
   -F 'image=@photo.jpg'
 ```
 
-If both `image_url` (inside `data`) and an `image` file are present in the
-same multipart request, **the uploaded file takes precedence** and
-`image_url` is silently ignored. The uploaded original is deleted once
-processing finishes - it isn't part of the retained/generated output set,
-only the generated WebP outputs are. Uploaded file size is capped by
-`MAX_IMAGE_FILE_SIZE`.
+Uploaded file size is capped by `MAX_IMAGE_FILE_SIZE`. The uploaded original
+is deleted once processing finishes - it isn't part of the retained/
+generated output set, only the generated WebP outputs are. There's no URL-
+based input: the server never makes an outbound request to fetch an image,
+which also means there's no SSRF surface to worry about.
 
-Response `202` (either way):
+Response `202`:
 
 ```json
 { "id": 1, "status": "pending" }
@@ -166,8 +149,7 @@ entries; `mode` must be one of `contain`, `fit`, `cover`, `crop`, `fill`.
 {
   "id": 1,
   "status": "completed",
-  "input_type": "url",
-  "source_url": "https://example.com/photo.jpg",
+  "input_type": "upload",
   "created_at": "...",
   "completed_at": "...",
   "images": [
@@ -178,8 +160,7 @@ entries; `mode` must be one of `contain`, `fit`, `cover`, `crop`, `fill`.
 ```
 
 `status` is one of `pending`, `processing`, `completed`, `partially_completed`,
-`failed`. `input_type` is `url` or `upload`; `source_url` is only present for
-`url` requests. `errors` (only present when non-empty) lists sizes that
+`failed`. `errors` (only present when non-empty) lists sizes that
 failed with a human-readable message.
 
 ## Retention and cleanup
@@ -217,11 +198,10 @@ variables directly. See `.env.example` for the full list with comments.
 | `IMAGE_DEFAULT_QUALITY`, `IMAGE_QUALITY_MIN`, `IMAGE_QUALITY_MAX` | WebP quality default and client-override bounds |
 | `IMAGE_RETENTION_SECONDS` | Output lifetime in seconds, applied at creation time |
 | `ALLOW_UPSCALE` | Global upscale default (overridable per size) |
-| `MAX_IMAGE_FILE_SIZE`, `MAX_SOURCE_DOWNLOAD_SIZE` | Download size caps |
+| `MAX_IMAGE_FILE_SIZE` | Uploaded source file size cap |
 | `MAX_IMAGE_WIDTH`, `MAX_IMAGE_HEIGHT` | Source dimension caps |
 | `MAX_TOTAL_OUTPUT_PIXELS` | Per-requested-size pixel cap (decompression-bomb guard) |
 | `MAX_SIZES_PER_REQUEST` | Sizes allowed per request |
-| `MAX_SOURCE_DOWNLOAD_TIME`, `MAX_CONNECTION_TIMEOUT`, `MAX_REDIRECTS` | Download behavior |
 | `MAX_CONCURRENT_IMAGE_JOBS`, `VIPS_CONCURRENCY` | Concurrency (see below) |
 | `STORAGE_PATH` | Local disk root for generated files |
 | `PROCESSING_QUEUE`, `CLEANUP_QUEUE` | Queue names |
@@ -239,17 +219,12 @@ worker process. The defaults (4 x 2 = 8) target an 8-core worker; turn one
 down before the other on smaller machines. This favors stable throughput over
 maximum theoretical parallelism.
 
-## Known limitation: SSRF
+## No SSRF surface
 
-**This deployment does not restrict which hosts `image_url` may resolve to.**
-Per an explicit product decision, no SSRF protection is implemented: the
-server will fetch `http://127.0.0.1`, RFC1918 addresses, the cloud metadata
-endpoint (`169.254.169.254`), etc. if given a URL that resolves there. Do not
-expose this service to untrusted clients or the public internet without
-adding host/IP allow-listing first - see the comment at the top of
-`internal/download/downloader.go` for what that would need to cover
-(resolved-IP checks, dialing the resolved IP directly to avoid DNS-rebinding,
-re-validating on every redirect hop).
+The source image is only ever supplied as a local file upload - the server
+never makes an outbound HTTP request to fetch a client-supplied URL. That
+removes SSRF (server-side request forgery) as an attack surface entirely;
+there's nothing to allow-list or restrict here.
 
 ## Local development
 
@@ -311,11 +286,11 @@ separate `queue:work` process to run for this project.
 go test ./...
 ```
 
-`internal/download` and `app/support/imageconfig` have unit tests that run
-without libvips or a real database. Tests exercising `internal/imageprocessing`
-(actual resizing) and the full job/API flow require libvips installed and a
-configured MySQL database (`DB_*` in `.env`), per the framework's
-`tests.TestCase` bootstrap convention.
+`app/support/imageconfig` has unit tests that run without libvips or a real
+database. Tests exercising `internal/imageprocessing` (actual resizing) and
+the full job/API flow require libvips installed and a configured MySQL
+database (`DB_*` in `.env`), per the framework's `tests.TestCase` bootstrap
+convention.
 
 ## Deviations from a from-scratch design
 

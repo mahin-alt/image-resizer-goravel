@@ -1,8 +1,8 @@
 // Package imageconfig is the single place that reads the "image" config tree
 // (config/image.go, itself populated from environment variables). Every other
-// package (controllers, services, jobs, the govips adapter, the downloader)
-// must go through these accessors instead of reading facades.Config() or
-// os.Getenv() directly, so every limit stays defined in exactly one place.
+// package (controllers, services, jobs, the govips adapter) must go through
+// these accessors instead of reading facades.Config() or os.Getenv()
+// directly, so every limit stays defined in exactly one place.
 package imageconfig
 
 import (
@@ -13,8 +13,8 @@ import (
 )
 
 func DefaultQuality() int { return facades.Config().GetInt("image.default_quality", 80) }
-func QualityMin() int     { return facades.Config().GetInt("image.quality_min", 40) }
-func QualityMax() int     { return facades.Config().GetInt("image.quality_max", 95) }
+func QualityMin() int { return facades.Config().GetInt("image.quality_min", 0) }
+func QualityMax() int { return facades.Config().GetInt("image.quality_max", 100) }
 
 // ClampQuality resolves a possibly-nil client-supplied quality against the
 // configured default and [QualityMin, QualityMax] bounds.
@@ -65,20 +65,6 @@ func MaxTotalOutputPixels() int64 {
 func MaxSizesPerRequest() int {
 	return facades.Config().GetInt("image.max_sizes_per_request", 10)
 }
-
-func MaxSourceDownloadSize() int64 {
-	return toInt64(facades.Config().Get("image.max_source_download_size", int64(25*1024*1024)))
-}
-
-func MaxSourceDownloadTime() time.Duration {
-	return facades.Config().GetDuration("image.max_source_download_time", 30*time.Second)
-}
-
-func MaxConnectionTimeout() time.Duration {
-	return facades.Config().GetDuration("image.max_connection_timeout", 5*time.Second)
-}
-
-func MaxRedirects() int { return facades.Config().GetInt("image.max_redirects", 3) }
 
 func MaxConcurrentImageJobs() int {
 	return facades.Config().GetInt("image.max_concurrent_image_jobs", 4)
