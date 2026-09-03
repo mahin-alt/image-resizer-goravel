@@ -207,14 +207,14 @@ func (r *ProcessImageRequestJob) persistOutput(request *models.ImageProcessingRe
 		Mode:                         out.Mode,
 		Format:                       "webp",
 		FileSize:                     int64(len(out.Bytes)),
-		ExpiresAt:                    carbon.NewDateTime(carbon.Now().AddSeconds(imageconfig.RetentionSeconds())),
+		// Outputs are permanent now - no ExpiresAt, nothing cleans these up.
 	}
 	if err := facades.Orm().Query().Create(output); err != nil {
 		return fmt.Errorf("create output row: %w", err)
 	}
 
 	path := storage.OutputPath(request.ID, output.ID)
-	if err := storage.Put(path, out.Bytes); err != nil {
+	if err := storage.PutOutput(path, out.Bytes); err != nil {
 		// Roll back the row so a retry can cleanly recreate it rather than
 		// leaving a DB row with no backing file.
 		_, _ = facades.Orm().Query().Delete(output)

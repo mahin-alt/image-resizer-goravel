@@ -26,6 +26,7 @@ import (
 	"github.com/goravel/gin"
 	"github.com/goravel/mysql"
 	"github.com/goravel/openai"
+	"github.com/goravel/s3"
 )
 
 func Providers() []foundation.ServiceProvider {
@@ -42,6 +43,7 @@ func Providers() []foundation.ServiceProvider {
 		&gin.ServiceProvider{},
 		&ai.ServiceProvider{},
 		&openai.ServiceProvider{},
+		&s3.ServiceProvider{},
 		&database.ServiceProvider{},
 		&mysql.ServiceProvider{},
 		&auth.ServiceProvider{},

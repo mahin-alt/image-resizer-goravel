@@ -125,10 +125,19 @@ func (c *ImageController) Download(ctx http.Context) http.Response {
 		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
 	}
 
-	if !storage.Exists(output.StoragePath) {
+	if !storage.OutputExists(output.StoragePath) {
 		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "file no longer available"})
 	}
 
+	content, err := storage.GetOutput(output.StoragePath)
+	if err != nil {
+		facades.Log().With(map[string]any{"error": err.Error(), "output_id": output.ID}).
+			Error("failed to fetch output from storage")
+		return ctx.Response().Status(http.StatusInternalServerError).Json(http.Json{"error": "failed to fetch file"})
+	}
+
 	filename := fmt.Sprintf("image-%dx%d.webp", output.Width, output.Height)
-	return ctx.Response().Download(storage.Path(output.StoragePath), filename)
+	return ctx.Response().
+		Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename)).
+		Data(http.StatusOK, "image/webp", content)
 }

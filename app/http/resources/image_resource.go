@@ -77,7 +77,7 @@ func RequestDetail(r *models.ImageProcessingRequest, sizes []models.ImageProcess
 		case models.SizeStatusCompleted:
 			if o, ok := outputsBySize[s.ID]; ok {
 				images = append(images, ImageOutputResponse{
-					URL:         storage.Url(o.StoragePath),
+					URL:         storage.OutputUrl(o.StoragePath),
 					DownloadURL: downloadURL(r.ID, o.ID),
 					Width:       o.Width,
 					Height:      o.Height,

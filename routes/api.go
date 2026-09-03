@@ -5,11 +5,11 @@ import (
 
 	"goravel/app/facades"
 	"goravel/app/http/controllers"
-	"goravel/app/support/imageconfig"
 )
 
-// Api registers the JSON API (v1) plus a static route serving generated
-// WebP files from the "images" disk (see config/filesystems.go).
+// Api registers the JSON API (v1). Generated WebP outputs are served from
+// the "s3" disk (see config/filesystems.go) - there's no local static route
+// for them.
 func Api() {
 	imageController := controllers.NewImageController()
 
@@ -18,6 +18,4 @@ func Api() {
 		router.Get("images/{id}", imageController.Show)
 		router.Get("images/{id}/outputs/{outputId}/download", imageController.Download)
 	})
-
-	facades.Route().Static("images", imageconfig.StoragePath())
 }
