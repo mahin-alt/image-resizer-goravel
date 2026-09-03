@@ -6,6 +6,8 @@
 package storage
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/goravel/framework/contracts/filesystem"
@@ -21,11 +23,25 @@ const (
 	outputDisk = "s3"
 )
 
-// OutputPath builds the deterministic, safe storage path for one generated
-// output. It never derives from client input (URLs/filenames), only from our
-// own numeric IDs, so there is no path-traversal surface.
-func OutputPath(requestID, outputID uint) string {
-	return fmt.Sprintf("%d/%d.webp", requestID, outputID)
+// OutputPath builds the storage path for one generated output: all sizes of
+// the same request share the same hash (see NewOutputHash), so they resolve
+// to the same filename across their own size folder -
+// media/{width}x{height}/{hash}.webp. hash is our own generated value
+// (never derived from client input), so there is no path-traversal surface.
+func OutputPath(width, height int, hash string) string {
+	return fmt.Sprintf("media/%dx%d/%s.webp", width, height, hash)
+}
+
+// NewOutputHash generates the random name shared by every output of one
+// request. 16 bytes (128 bits) of crypto/rand, hex-encoded - collision odds
+// are negligible and it never derives from client input or timing, so it
+// can't be predicted or path-traversed.
+func NewOutputHash() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate output hash: %w", err)
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 // UploadDir is where an uploaded original source is stored temporarily
