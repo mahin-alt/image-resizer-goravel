@@ -9,11 +9,8 @@
 package resources
 
 import (
-	"fmt"
-
 	"github.com/goravel/framework/support/carbon"
 
-	"goravel/app/facades"
 	"goravel/app/models"
 	"goravel/app/storage"
 )
@@ -31,13 +28,12 @@ func RequestAccepted(r *models.ImageProcessingRequest) *RequestAcceptedResponse 
 }
 
 type ImageOutputResponse struct {
-	URL         string `json:"url"`
-	DownloadURL string `json:"download_url"`
-	Width       int    `json:"width"`
-	Height      int    `json:"height"`
-	Mode        string `json:"mode"`
-	Format      string `json:"format"`
-	FileSize    int64  `json:"file_size"`
+	URL      string `json:"url"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	Mode     string `json:"mode"`
+	Format   string `json:"format"`
+	FileSize int64  `json:"file_size"`
 }
 
 type SizeErrorResponse struct {
@@ -77,13 +73,12 @@ func RequestDetail(r *models.ImageProcessingRequest, sizes []models.ImageProcess
 		case models.SizeStatusCompleted:
 			if o, ok := outputsBySize[s.ID]; ok {
 				images = append(images, ImageOutputResponse{
-					URL:         storage.OutputUrl(o.StoragePath),
-					DownloadURL: downloadURL(r.ID, o.ID),
-					Width:       o.Width,
-					Height:      o.Height,
-					Mode:        o.Mode,
-					Format:      o.Format,
-					FileSize:    o.FileSize,
+					URL:      storage.OutputUrl(o.StoragePath),
+					Width:    o.Width,
+					Height:   o.Height,
+					Mode:     o.Mode,
+					Format:   o.Format,
+					FileSize: o.FileSize,
 				})
 			}
 		case models.SizeStatusFailed:
@@ -126,12 +121,4 @@ func RequestDetail(r *models.ImageProcessingRequest, sizes []models.ImageProcess
 		resp.CompletedAt = r.CompletedAt
 	}
 	return resp
-}
-
-// downloadURL points at the download-forcing endpoint (Content-Disposition:
-// attachment - see ImageController.Download), as opposed to URL above,
-// which is the plain static file URL a browser will happily render inline.
-func downloadURL(requestID, outputID uint) string {
-	base, _ := facades.Config().Env("APP_URL", "").(string)
-	return fmt.Sprintf("%s/api/v1/images/%d/outputs/%d/download", base, requestID, outputID)
 }
