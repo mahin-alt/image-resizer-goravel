@@ -6,6 +6,16 @@ package imageprocessing
 
 import "context"
 
+// MaxSupportedDimension is libvips' own hard sanity ceiling for a single
+// image coordinate (width or height) - VIPS_DEFAULT_MAX_COORD in
+// vips/image.h ("We have a maximum value for a coordinate at various points
+// for sanity checking... it's good to have a lower value set so we can see
+// crazy numbers early"). No width/height beyond this can ever be produced
+// by this library, regardless of any app-level config, so requested output
+// sizes are validated against it independently of the configurable
+// MAX_IMAGE_WIDTH/MAX_IMAGE_HEIGHT business limits (see imageconfig).
+const MaxSupportedDimension = 100_000_000
+
 // SizeSpec is one requested output: dimensions, resize mode, and the
 // already-resolved (clamped/defaulted) upscale and quality settings.
 type SizeSpec struct {

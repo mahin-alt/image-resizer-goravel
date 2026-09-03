@@ -125,8 +125,15 @@ func (r *ProcessImageRequestJob) Handle(args ...any) error {
 			info.Width, info.Height, imageconfig.MaxImageWidth(), imageconfig.MaxImageHeight())))
 	}
 
+	// requestedByID maps a size back to what the client actually asked for
+	// (used for the storage folder name below) - out.Width/out.Height can
+	// differ from this for aspect-ratio-preserving modes like "contain",
+	// but the folder should reflect the request, not the post-resize
+	// pixel dimensions.
+	requestedByID := make(map[uint][2]int, len(sizes))
 	specs := make([]imageprocessing.SizeSpec, 0, len(sizes))
 	for _, s := range sizes {
+		requestedByID[s.ID] = [2]int{s.Width, s.Height}
 		if int64(s.Width)*int64(s.Height) > imageconfig.MaxTotalOutputPixels() {
 			markSizeFailed(s.ID, fmt.Sprintf("%dx%d exceeds the configured maximum output pixel count", s.Width, s.Height))
 			continue
@@ -150,9 +157,15 @@ func (r *ProcessImageRequestJob) Handle(args ...any) error {
 		markSizeFailed(se.RequestSizeID, se.Err.Error())
 	}
 
+	outputHash, err := r.outputHashFor(&request)
+	if err != nil {
+		return r.fail(&request, fmt.Errorf("assign output hash: %w", err))
+	}
+
 	successCount := 0
 	for _, out := range outputs {
-		if err := r.persistOutput(&request, out); err != nil {
+		requested := requestedByID[out.RequestSizeID]
+		if err := r.persistOutput(&request, out, outputHash, requested[0], requested[1]); err != nil {
 			markSizeFailed(out.RequestSizeID, err.Error())
 			continue
 		}
@@ -188,10 +201,33 @@ func (r *ProcessImageRequestJob) resolveSource(request *models.ImageProcessingRe
 	}, nil
 }
 
+// outputHashFor returns this request's shared output filename (see
+// storage.NewOutputHash), generating and persisting one if this is the
+// first attempt. Persisting it means a later retry reuses the same value
+// instead of orphaning already-written sizes under a hash no other size
+// will ever reference again.
+func (r *ProcessImageRequestJob) outputHashFor(request *models.ImageProcessingRequest) (string, error) {
+	if request.OutputHash != nil && *request.OutputHash != "" {
+		return *request.OutputHash, nil
+	}
+	hash, err := storage.NewOutputHash()
+	if err != nil {
+		return "", err
+	}
+	if err := updateRequest(request.ID, map[string]any{"output_hash": hash}); err != nil {
+		return "", fmt.Errorf("record output hash: %w", err)
+	}
+	request.OutputHash = &hash
+	return hash, nil
+}
+
 // persistOutput is idempotent: a retry that re-runs this size will find the
 // existing ImageOutput row (unique on request_size_id) and skip re-writing
-// it, rather than creating a duplicate.
-func (r *ProcessImageRequestJob) persistOutput(request *models.ImageProcessingRequest, out imageprocessing.Output) error {
+// it, rather than creating a duplicate. requestedWidth/requestedHeight are
+// what the client asked for (the storage folder name); out.Width/out.Height
+// are the actual, possibly-different, resulting pixel dimensions (recorded
+// on the row itself, same as before).
+func (r *ProcessImageRequestJob) persistOutput(request *models.ImageProcessingRequest, out imageprocessing.Output, outputHash string, requestedWidth, requestedHeight int) error {
 	var existing models.ImageOutput
 	_ = facades.Orm().Query().Where("image_processing_request_size_id", out.RequestSizeID).First(&existing)
 	if existing.ID != 0 {
@@ -213,7 +249,7 @@ func (r *ProcessImageRequestJob) persistOutput(request *models.ImageProcessingRe
 		return fmt.Errorf("create output row: %w", err)
 	}
 
-	path := storage.OutputPath(request.ID, output.ID)
+	path := storage.OutputPath(requestedWidth, requestedHeight, outputHash)
 	if err := storage.PutOutput(path, out.Bytes); err != nil {
 		// Roll back the row so a retry can cleanly recreate it rather than
 		// leaving a DB row with no backing file.

@@ -12,6 +12,7 @@ import (
 	"goravel/app/models"
 	"goravel/app/services"
 	"goravel/app/support/imageconfig"
+	"goravel/internal/imageprocessing"
 )
 
 type ImageController struct{}
@@ -55,10 +56,26 @@ func (c *ImageController) Store(ctx http.Context) http.Response {
 		})
 	}
 
+	// Width/height are capped at whichever is smaller: the app's own
+	// configured business limit (imageconfig.MaxImage{Width,Height}), or
+	// libvips' own hard ceiling (imageprocessing.MaxSupportedDimension) -
+	// no request can demand a size the library could never produce,
+	// regardless of how MAX_IMAGE_WIDTH/MAX_IMAGE_HEIGHT are configured.
+	// "min:1" (combined with "integer") already rejects zero and negative
+	// values.
+	maxWidth := imageconfig.MaxImageWidth()
+	if maxWidth > imageprocessing.MaxSupportedDimension {
+		maxWidth = imageprocessing.MaxSupportedDimension
+	}
+	maxHeight := imageconfig.MaxImageHeight()
+	if maxHeight > imageprocessing.MaxSupportedDimension {
+		maxHeight = imageprocessing.MaxSupportedDimension
+	}
+
 	rules := map[string]any{
 		"sizes":                 fmt.Sprintf("required|array|min:1|max:%d", imageconfig.MaxSizesPerRequest()),
-		"sizes.*.width":         fmt.Sprintf("required|integer|min:1|max:%d", imageconfig.MaxImageWidth()),
-		"sizes.*.height":        fmt.Sprintf("required|integer|min:1|max:%d", imageconfig.MaxImageHeight()),
+		"sizes.*.width":         fmt.Sprintf("required|integer|min:1|max:%d", maxWidth),
+		"sizes.*.height":        fmt.Sprintf("required|integer|min:1|max:%d", maxHeight),
 		"sizes.*.mode":          "string|in:contain,fit,cover,crop,fill",
 		"sizes.*.allow_upscale": "bool",
 		"sizes.*.quality":       fmt.Sprintf("integer|min:%d|max:%d", imageconfig.QualityMin(), imageconfig.QualityMax()),
@@ -75,6 +92,16 @@ func (c *ImageController) Store(ctx http.Context) http.Response {
 	var body requests.CreateImageRequestBody
 	if err := validator.Bind(&body); err != nil {
 		return ctx.Response().Status(http.StatusUnprocessableEntity).Json(http.Json{"error": "invalid data field"})
+	}
+
+	// A request asking for the same width x height more than once is never
+	// valid (it can only ever produce a unique output per size - see the
+	// unique index on image_processing_request_sizes) - reject the whole
+	// request rather than silently collapsing/dropping the duplicate.
+	if dupe := firstDuplicateSize(body.Sizes); dupe != "" {
+		return ctx.Response().Status(http.StatusUnprocessableEntity).Json(http.Json{
+			"errors": http.Json{"sizes": []string{fmt.Sprintf("size %s was requested more than once", dupe)}},
+		})
 	}
 
 	request, err := services.CreateImageProcessingRequest(file, body.Sizes)
@@ -105,4 +132,18 @@ func (c *ImageController) Show(ctx http.Context) http.Response {
 	_ = facades.Orm().Query().Where("image_processing_request_id", request.ID).Find(&outputs)
 
 	return ctx.Response().Success().Json(resources.RequestDetail(&request, sizes, outputs))
+}
+
+// firstDuplicateSize returns "{width}x{height}" for the first width/height
+// pair that appears more than once in sizes, or "" if all are distinct.
+func firstDuplicateSize(sizes []requests.RequestedSize) string {
+	seen := make(map[[2]int]bool, len(sizes))
+	for _, s := range sizes {
+		key := [2]int{s.Width, s.Height}
+		if seen[key] {
+			return fmt.Sprintf("%dx%d", s.Width, s.Height)
+		}
+		seen[key] = true
+	}
+	return ""
 }

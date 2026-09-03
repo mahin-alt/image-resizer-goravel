@@ -53,6 +53,11 @@ type ImageProcessingRequest struct {
 	// (e.g. the download itself failed).
 	SourceWidth  *int `gorm:"column:source_width" json:"-"`
 	SourceHeight *int `gorm:"column:source_height" json:"-"`
+	// OutputHash is the single random name shared by every output this
+	// request generates (media/{width}x{height}/{output_hash}.webp) - see
+	// app/storage.NewOutputHash. Generated lazily on first use and
+	// persisted so a retry reuses it instead of a fresh one.
+	OutputHash *string `gorm:"column:output_hash;type:varchar(64)" json:"-"`
 
 	Sizes   []ImageProcessingRequestSize `gorm:"foreignKey:ImageProcessingRequestID" json:"-"`
 	Outputs []ImageOutput                `gorm:"foreignKey:ImageProcessingRequestID" json:"-"`
