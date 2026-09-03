@@ -11,7 +11,6 @@ import (
 	"goravel/app/http/resources"
 	"goravel/app/models"
 	"goravel/app/services"
-	"goravel/app/storage"
 	"goravel/app/support/imageconfig"
 )
 
@@ -106,38 +105,4 @@ func (c *ImageController) Show(ctx http.Context) http.Response {
 	_ = facades.Orm().Query().Where("image_processing_request_id", request.ID).Find(&outputs)
 
 	return ctx.Response().Success().Json(resources.RequestDetail(&request, sizes, outputs))
-}
-
-// Download handles GET /api/v1/images/{id}/outputs/{outputId}/download.
-// Unlike the plain "url" field (a static file URL a browser renders inline),
-// this sets Content-Disposition: attachment so it always triggers a browser
-// download instead.
-func (c *ImageController) Download(ctx http.Context) http.Response {
-	requestID := ctx.Request().RouteInt("id")
-	outputID := ctx.Request().RouteInt("outputId")
-	if requestID <= 0 || outputID <= 0 {
-		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
-	}
-
-	var output models.ImageOutput
-	if err := facades.Orm().Query().Where("id", outputID).First(&output); err != nil ||
-		output.ID == 0 || output.ImageProcessingRequestID != uint(requestID) {
-		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
-	}
-
-	if !storage.OutputExists(output.StoragePath) {
-		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "file no longer available"})
-	}
-
-	content, err := storage.GetOutput(output.StoragePath)
-	if err != nil {
-		facades.Log().With(map[string]any{"error": err.Error(), "output_id": output.ID}).
-			Error("failed to fetch output from storage")
-		return ctx.Response().Status(http.StatusInternalServerError).Json(http.Json{"error": "failed to fetch file"})
-	}
-
-	filename := fmt.Sprintf("image-%dx%d.webp", output.Width, output.Height)
-	return ctx.Response().
-		Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename)).
-		Data(http.StatusOK, "image/webp", content)
 }

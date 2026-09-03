@@ -85,20 +85,9 @@ func PutOutput(path string, content []byte) error {
 	return facades.Storage().Disk(outputDisk).Put(path, string(content))
 }
 
-// GetOutput reads a generated output's bytes back from the output disk, for
-// the download endpoint to proxy through the backend.
-func GetOutput(path string) ([]byte, error) {
-	content, err := facades.Storage().Disk(outputDisk).Get(path)
-	if err != nil {
-		return nil, err
-	}
-	return []byte(content), nil
-}
-
-func OutputExists(path string) bool {
-	return facades.Storage().Disk(outputDisk).Exists(path)
-}
-
+// OutputUrl is the only way callers read a generated output back - there is
+// no backend-proxied download path, clients fetch straight from the "s3"
+// disk via this URL.
 func OutputUrl(path string) string {
 	return facades.Storage().Disk(outputDisk).Url(path)
 }
