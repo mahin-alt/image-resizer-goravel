@@ -59,6 +59,17 @@ func NewS3(ctx context.Context, config config.Config, disk string) (*S3, error) 
 		Region: region,
 		Credentials: aws.NewCredentialsCache(
 			credentials.NewStaticCredentialsProvider(accessKeyId, accessKeySecret, token)),
+		// aws-sdk-go-v2 defaults to computing a request checksum and
+		// streaming the body as aws-chunked with a trailing signature
+		// (STREAMING-UNSIGNED-PAYLOAD-TRAILER). Real AWS S3 supports that,
+		// but most S3-compatible endpoints/CDNs in front of them (MinIO,
+		// this project's production CDN) don't handle the chunked trailer
+		// framing correctly, and PutObject fails with
+		// "SignatureDoesNotMatch" even though the credentials are correct.
+		// Forcing "when_required" makes the SDK fall back to a plain,
+		// fully-buffered signed request body instead.
+		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
+		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired,
 	}
 
 	if endpoint != "" {
