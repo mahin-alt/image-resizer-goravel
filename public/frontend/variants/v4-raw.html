@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Power / Raw JSON — Image Resizer</title>
+<link rel="stylesheet" href="../shared/base.css" />
+<script src="../shared/theme.js"></script>
+<style>
+  body { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 22px 20px 60px; display: flex; gap: 20px; align-items: flex-start; }
+  .col { flex: 1; min-width: 0; }
+  h1 { font-family: -apple-system, sans-serif; font-size: 16px; margin: 0 0 2px; }
+  .sub { font-family: -apple-system, sans-serif; color: var(--text-dim); font-size: 12px; margin: 0 0 16px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .panel .title { font-family: -apple-system, sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); margin-bottom: 10px; display:flex; justify-content: space-between; }
+
+  .dropzone { border: 1.5px dashed var(--border); border-radius: 8px; padding: 14px; text-align: center; cursor: pointer; font-family: -apple-system, sans-serif; font-size: 12px; color: var(--text-dim); }
+  .dropzone.drag { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+  .dropzone img { max-height: 90px; display: block; margin: 0 auto 6px; border-radius: 4px; }
+
+  textarea#json-editor {
+    width: 100%; min-height: 260px; resize: vertical;
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+    font: 12.5px/1.5 ui-monospace, monospace;
+    background: #0e1116; color: #d7dde5;
+    tab-size: 2;
+  }
+  .json-error { font-family: -apple-system, sans-serif; font-size: 12px; color: var(--danger); margin-top: 6px; }
+
+  table.form-view { width: 100%; border-collapse: collapse; font-family: -apple-system, sans-serif; font-size: 12px; }
+  table.form-view th { text-align: left; color: var(--text-dim); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  table.form-view td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  table.form-view input, table.form-view select { width: 100%; border: 1px solid var(--border); border-radius: 5px; padding: 3px 5px; font-size: 12px; font-family: inherit; }
+  table.form-view input[type=checkbox] { width: auto; }
+  table.form-view button.rm { border:none; background:none; color:var(--text-dim); cursor:pointer; }
+  table.form-view button.rm:hover { color: var(--danger); }
+  .add-row-btn { font-family: -apple-system, sans-serif; font-size: 12px; border: 1px dashed var(--border); background: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; margin-top: 8px; }
+
+  .btn { font-family: -apple-system, sans-serif; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; width: 100%; }
+  .btn.primary:disabled { opacity: .5; }
+  .error-box { font-family: -apple-system, sans-serif; background: var(--danger-dim); color: var(--danger); border-radius: 8px; padding: 10px 12px; font-size: 12px; white-space: pre-wrap; margin-top: 10px; }
+
+  .req-log { font-size: 11.5px; }
+  .req-log .line { padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .req-log .line:last-child { border-bottom: none; }
+  .badge { font-family: -apple-system, sans-serif; font-size: 10.5px; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+  .badge.pending, .badge.processing { background: var(--warn-dim); color: var(--warn); }
+  .badge.completed { background: var(--success-dim); color: var(--success); }
+  .badge.partially_completed { background: var(--warn-dim); color: var(--warn); }
+  .badge.failed, .badge.expired { background: var(--danger-dim); color: var(--danger); }
+  pre.resp { background: #0e1116; color: #9be39b; padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 11px; margin: 6px 0 0; }
+  .out-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 6px; margin-top: 6px; }
+  .out-grid img { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--surface-2); border-radius: 4px; }
+</style>
+</head>
+<body>
+  <div id="variant-bar"></div>
+
+  <div class="wrap">
+    <div class="col">
+      <h1>Power / Raw JSON</h1>
+      <p class="sub">The form and the JSON editor below stay in sync — edit whichever's faster. Good for probing validation edge cases.</p>
+
+      <div class="panel">
+        <div class="title">Source image</div>
+        <div class="dropzone" id="dropzone">
+          <div id="dz-empty">Click or drop image</div>
+          <div id="dz-filled" style="display:none"><img id="dz-preview" /><div id="dz-fname"></div></div>
+        </div>
+        <input type="file" id="file-input" accept="image/*" style="display:none" />
+      </div>
+
+      <div class="panel">
+        <div class="title">Form view <span style="font-weight:400">(mirrors JSON →)</span></div>
+        <table class="form-view">
+          <thead><tr><th>W</th><th>H</th><th>Mode</th><th>Q</th><th>Upsc.</th><th></th></tr></thead>
+          <tbody id="form-body"></tbody>
+        </table>
+        <button class="add-row-btn" id="add-row">+ row</button>
+      </div>
+
+      <button class="btn primary" id="submit-btn">POST /api/v1/images</button>
+      <div id="submit-error"></div>
+    </div>
+
+    <div class="col">
+      <div class="panel">
+        <div class="title">
+          <span>data = {"sizes": [...]}</span>
+          <span id="json-status" style="font-weight:400"></span>
+        </div>
+        <textarea id="json-editor" spellcheck="false"></textarea>
+        <div class="json-error" id="json-error"></div>
+      </div>
+
+      <div class="panel">
+        <div class="title">Request log</div>
+        <div class="req-log" id="req-log">
+          <div style="font-family:-apple-system, sans-serif;color:var(--text-dim)">No requests sent yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="../shared/api.js"></script>
+<script src="../shared/switcher.js"></script>
+<script src="../shared/lightbox.js"></script>
+<script>
+renderVariantBar('raw');
+renderThemeChanger('variant-bar');
+initLightbox();
+
+let file = null;
+let sizes = [defaultSize({ width: 800, height: 600, mode: 'cover', _id: 0 }), defaultSize({ width: 1600, height: 900, mode: 'contain', _id: 1 })];
+let seq = 2;
+let syncingFromJson = false;
+
+const editor = document.getElementById('json-editor');
+
+function stripped(s) {
+  const { width, height, mode, quality, allow_upscale } = s;
+  return { width, height, mode, quality, allow_upscale };
+}
+
+function syncJsonFromSizes() {
+  editor.value = JSON.stringify({ sizes: sizes.map(stripped) }, null, 2);
+  document.getElementById('json-status').textContent = 'in sync';
+  document.getElementById('json-error').textContent = '';
+}
+
+function renderForm() {
+  document.getElementById('form-body').innerHTML = sizes.map(s => `
+    <tr data-id="${s._id}">
+      <td><input type="number" min="1" data-field="width" value="${s.width}" style="width:60px" /></td>
+      <td><input type="number" min="1" data-field="height" value="${s.height}" style="width:60px" /></td>
+      <td>
+        <select data-field="mode">
+          ${MODES.map(m => `<option value="${m}" ${m === s.mode ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="number" min="0" max="100" data-field="quality" value="${s.quality}" style="width:48px" /></td>
+      <td style="text-align:center"><input type="checkbox" data-field="allow_upscale" ${s.allow_upscale ? 'checked' : ''} /></td>
+      <td><button class="rm" data-remove="${s._id}">&times;</button></td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('#form-body [data-field]').forEach(el => {
+    el.addEventListener('input', () => {
+      const tr = el.closest('tr');
+      const s = sizes.find(s => s._id === Number(tr.dataset.id));
+      const f = el.dataset.field;
+      if (f === 'allow_upscale') s[f] = el.checked;
+      else if (f === 'mode') s[f] = el.value;
+      else s[f] = Number(el.value);
+      syncJsonFromSizes();
+    });
+  });
+  document.querySelectorAll('#form-body [data-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      sizes = sizes.filter(s => s._id !== Number(btn.dataset.remove));
+      renderForm();
+      syncJsonFromSizes();
+    });
+  });
+}
+
+document.getElementById('add-row').addEventListener('click', () => {
+  sizes.push(defaultSize({ _id: seq++ }));
+  renderForm();
+  syncJsonFromSizes();
+});
+
+editor.addEventListener('input', () => {
+  document.getElementById('json-status').textContent = 'editing…';
+  try {
+    const parsed = JSON.parse(editor.value);
+    if (!Array.isArray(parsed.sizes)) throw new Error('Expected top-level {"sizes": [...]}');
+    sizes = parsed.sizes.map((s, i) => ({ ...defaultSize(s), _id: i }));
+    seq = sizes.length;
+    document.getElementById('json-error').textContent = '';
+    document.getElementById('json-status').textContent = 'in sync';
+    renderForm();
+  } catch (e) {
+    document.getElementById('json-error').textContent = `Not applied to form yet: ${e.message}`;
+  }
+});
+
+renderForm();
+syncJsonFromSizes();
+
+// upload
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+dropzone.addEventListener('click', () => fileInput.click());
+['dragover'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+
+function setFile(f) {
+  if (!f) return;
+  file = f;
+  document.getElementById('dz-empty').style.display = 'none';
+  document.getElementById('dz-filled').style.display = 'block';
+  document.getElementById('dz-fname').textContent = `${f.name} · ${bytesToSize(f.size)}`;
+  const reader = new FileReader();
+  reader.onload = () => document.getElementById('dz-preview').src = reader.result;
+  reader.readAsDataURL(f);
+}
+
+document.getElementById('submit-btn').addEventListener('click', async () => {
+  const errBox = document.getElementById('submit-error');
+  errBox.innerHTML = '';
+  if (!file) { errBox.innerHTML = '<div class="error-box">Choose an image first.</div>'; return; }
+  let parsed;
+  try { parsed = JSON.parse(editor.value); } catch (e) { errBox.innerHTML = `<div class="error-box">Invalid JSON: ${e.message}</div>`; return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const resp = await submitImage(file, parsed.sizes);
+    saveHistoryEntry({ id: resp.id, createdAt: new Date().toISOString(), sizes: parsed.sizes });
+    logLine(resp.id, resp);
+  } catch (e) {
+    errBox.innerHTML = `<div class="error-box">${e.status || ''} ${e.message}${e.errors ? '\n' + JSON.stringify(e.errors, null, 2) : ''}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'POST /api/v1/images';
+  }
+});
+
+function logLine(id, initialResp) {
+  const log = document.getElementById('req-log');
+  if (log.children.length === 1 && log.textContent.includes('No requests')) log.innerHTML = '';
+  const line = document.createElement('div');
+  line.className = 'line';
+  line.innerHTML = `
+    <div><span class="badge pending">pending</span> <b>#${id}</b></div>
+    <pre class="resp">${JSON.stringify(initialResp, null, 2)}</pre>
+    <div class="out-grid"></div>
+  `;
+  log.prepend(line);
+  pollImageRequest(id, {
+    onUpdate: (detail) => {
+      line.querySelector('.badge').className = `badge ${detail.status}`;
+      line.querySelector('.badge').textContent = detail.status;
+      line.querySelector('.resp').textContent = JSON.stringify(detail, null, 2);
+      const images = detail.images || [];
+      const outGrid = line.querySelector('.out-grid');
+      outGrid.innerHTML = images.map((img, i) => `<img class="lb-trigger" src="${img.url}" title="${img.width}x${img.height}" data-idx="${i}" loading="lazy" />`).join('');
+      outGrid.querySelectorAll('.lb-trigger').forEach(el => {
+        el.addEventListener('click', () => openLightbox(images, Number(el.dataset.idx)));
+      });
+      if (['completed', 'partially_completed', 'failed', 'expired'].includes(detail.status)) {
+        updateHistoryEntry(detail.id, { status: detail.status });
+      }
+    },
+  }).catch(e => {
+    line.querySelector('.resp').textContent += `\n\nPolling error: ${e.message}`;
+  });
+}
+</script>
+</body>
+</html>

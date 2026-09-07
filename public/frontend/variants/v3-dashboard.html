@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dashboard Cards — Image Resizer</title>
+<link rel="stylesheet" href="../shared/base.css" />
+<script src="../shared/theme.js"></script>
+<style>
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 20px 60px; display: flex; gap: 22px; align-items: flex-start; }
+  .col-left { flex: 1.1; min-width: 0; }
+  .col-right { flex: 1; min-width: 0; }
+
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin: 0 0 18px; }
+
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--text-dim);
+    background: var(--surface);
+    margin-bottom: 20px;
+  }
+  .dropzone.drag { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+  .dropzone img { max-height: 160px; border-radius: 8px; margin-bottom: 8px; }
+  .dropzone .fname { font-size: 12px; color: var(--text); }
+
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .size-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    position: relative;
+    box-shadow: var(--shadow);
+  }
+  .size-card .remove { position: absolute; top: 8px; right: 10px; border: none; background: none; font-size: 17px; color: var(--text-dim); cursor: pointer; }
+  .size-card .remove:hover { color: var(--danger); }
+  .size-card .dims { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .field label { font-size: 11px; color: var(--text-dim); display: block; margin-bottom: 3px; }
+  .field input, .field select { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+  .quality-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); margin-bottom: 8px; }
+  .quality-row input[type=range] { flex: 1; }
+  .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+
+  .add-card { border: 1.5px dashed var(--border); border-radius: 12px; display: flex; align-items: center; justify-content: center; min-height: 90px; cursor: pointer; color: var(--text-dim); font-size: 13px; }
+  .add-card:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 9px; padding: 10px 16px; font-size: 14px; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; width: 100%; }
+  .btn.primary:disabled { opacity: .5; }
+  .error-box { background: var(--danger-dim); color: var(--danger); border-radius: 8px; padding: 10px 12px; font-size: 12px; margin-top: 10px; white-space: pre-wrap; }
+
+  .section-title { font-size: 13px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  .section-title button { font-size: 11px; text-transform: none; font-weight: 500; border: none; background: none; color: var(--text-dim); cursor: pointer; text-decoration: underline; }
+
+  .history-empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 40px 0; }
+  .req-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: var(--shadow); }
+  .req-card .head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
+  .badge { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 600; }
+  .badge.pending, .badge.processing { background: var(--warn-dim); color: var(--warn); }
+  .badge.completed { background: var(--success-dim); color: var(--success); }
+  .badge.partially_completed { background: var(--warn-dim); color: var(--warn); }
+  .badge.failed, .badge.expired { background: var(--danger-dim); color: var(--danger); }
+  .req-id { color: var(--text-dim); }
+  .out-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+  .out-card img { width: 100%; display: block; aspect-ratio: 1; object-fit: contain; background: var(--surface-2); border-radius: 6px; }
+  .out-meta { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+  .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .size-error { font-size: 11px; color: var(--danger); margin-top: 6px; }
+</style>
+</head>
+<body>
+  <div id="variant-bar"></div>
+
+  <div class="wrap">
+    <div class="col-left">
+      <h1>Dashboard Cards</h1>
+      <p class="sub">Drop an image, tweak each output as its own card, submit. Every request you make sticks around below.</p>
+
+      <div class="dropzone" id="dropzone">
+        <div id="dz-empty">📤 Click or drag &amp; drop an image</div>
+        <div id="dz-filled" style="display:none">
+          <img id="dz-preview" /><div class="fname" id="dz-fname"></div>
+        </div>
+      </div>
+      <input type="file" id="file-input" accept="image/*" style="display:none" />
+
+      <div class="section-title">Output sizes</div>
+      <div class="card-grid" id="card-grid"></div>
+
+      <div id="error-box"></div>
+      <button class="btn primary" id="submit-btn" style="margin-top:6px">Upload &amp; process</button>
+    </div>
+
+    <div class="col-right">
+      <div class="section-title">
+        Request history
+        <button id="clear-history">clear</button>
+      </div>
+      <div id="history"></div>
+    </div>
+  </div>
+
+<script src="../shared/api.js"></script>
+<script src="../shared/switcher.js"></script>
+<script src="../shared/lightbox.js"></script>
+<script>
+renderVariantBar('dashboard');
+renderThemeChanger('variant-bar');
+initLightbox();
+
+let file = null;
+let sizes = [defaultSize({ width: 800, height: 600, mode: 'cover', _id: 0 }), defaultSize({ width: 1600, height: 900, mode: 'contain', _id: 1 })];
+let seq = 2;
+
+function renderCards() {
+  const grid = document.getElementById('card-grid');
+  grid.innerHTML = sizes.map(s => `
+    <div class="size-card" data-id="${s._id}">
+      ${sizes.length > 1 ? `<button class="remove" data-remove="${s._id}">&times;</button>` : ''}
+      <div class="dims">${s.width} × ${s.height}</div>
+      <div class="field-row">
+        <div class="field"><label>Width</label><input type="number" min="1" data-field="width" data-id="${s._id}" value="${s.width}" /></div>
+        <div class="field"><label>Height</label><input type="number" min="1" data-field="height" data-id="${s._id}" value="${s.height}" /></div>
+      </div>
+      <div class="field" style="margin-bottom:8px">
+        <label>Mode</label>
+        <select data-field="mode" data-id="${s._id}">
+          ${MODES.map(m => `<option value="${m}" ${m === s.mode ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+      </div>
+      <div class="quality-row">
+        <span>Q</span><input type="range" min="0" max="100" data-field="quality" data-id="${s._id}" value="${s.quality}" /><span>${s.quality}</span>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" data-field="allow_upscale" data-id="${s._id}" ${s.allow_upscale ? 'checked' : ''} id="up-${s._id}" />
+        <label for="up-${s._id}">Allow upscale</label>
+      </div>
+    </div>
+  `).join('') + `<div class="add-card" id="add-card">+ Add size</div>`;
+
+  grid.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => {
+    sizes = sizes.filter(s => s._id !== Number(b.dataset.remove));
+    renderCards();
+  }));
+  grid.querySelectorAll('[data-field]').forEach(el => el.addEventListener('input', () => {
+    const s = sizes.find(s => s._id === Number(el.dataset.id));
+    const f = el.dataset.field;
+    if (f === 'allow_upscale') s[f] = el.checked;
+    else if (f === 'quality' || f === 'width' || f === 'height') s[f] = Number(el.value);
+    else s[f] = el.value;
+    if (f === 'width' || f === 'height') el.closest('.size-card').querySelector('.dims').textContent = `${s.width} × ${s.height}`;
+    if (f === 'quality') el.closest('.quality-row').querySelector('span:last-child').textContent = s.quality;
+  }));
+  document.getElementById('add-card').addEventListener('click', () => {
+    sizes.push(defaultSize({ _id: seq++ }));
+    renderCards();
+  });
+}
+renderCards();
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+dropzone.addEventListener('click', () => fileInput.click());
+['dragover'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+
+function setFile(f) {
+  if (!f) return;
+  file = f;
+  document.getElementById('dz-empty').style.display = 'none';
+  document.getElementById('dz-filled').style.display = 'block';
+  document.getElementById('dz-fname').textContent = `${f.name} · ${bytesToSize(f.size)}`;
+  const reader = new FileReader();
+  reader.onload = () => document.getElementById('dz-preview').src = reader.result;
+  reader.readAsDataURL(f);
+}
+
+document.getElementById('submit-btn').addEventListener('click', async () => {
+  const errBox = document.getElementById('error-box');
+  errBox.innerHTML = '';
+  if (!file) { errBox.innerHTML = '<div class="error-box">Choose an image first.</div>'; return; }
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  const payload = sizes.map(({ width, height, mode, quality, allow_upscale }) => ({ width, height, mode, quality, allow_upscale }));
+  try {
+    const { id } = await submitImage(file, payload);
+    saveHistoryEntry({ id, createdAt: new Date().toISOString(), sizes: payload });
+    prependHistoryCard(id, payload);
+  } catch (e) {
+    errBox.innerHTML = `<div class="error-box">${e.message}${e.errors ? '\n' + JSON.stringify(e.errors, null, 2) : ''}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Upload & process';
+  }
+});
+
+function renderHistoryFromStorage() {
+  const list = loadHistory();
+  const wrap = document.getElementById('history');
+  if (!list.length) { wrap.innerHTML = '<div class="history-empty">No requests yet — submit one to see it here.</div>'; return; }
+  wrap.innerHTML = '';
+  list.forEach(entry => {
+    const card = buildReqCardEl(entry.id, entry.sizes || []);
+    wrap.appendChild(card);
+    if (!['completed', 'partially_completed', 'failed', 'expired'].includes(entry.status)) {
+      pollImageRequest(entry.id, { onUpdate: d => updateReqCard(card, d) }).catch(() => {});
+    } else {
+      getImageRequest(entry.id).then(d => updateReqCard(card, d)).catch(() => {});
+    }
+  });
+}
+
+function buildReqCardEl(id, sizes) {
+  const card = document.createElement('div');
+  card.className = 'req-card';
+  card.innerHTML = `
+    <div class="head">
+      <span class="spinner"></span>
+      <span class="badge pending">pending</span>
+      <span class="req-id">#${id} · ${sizes.length} size${sizes.length === 1 ? '' : 's'}</span>
+    </div>
+    <div class="out-grid"></div>
+  `;
+  return card;
+}
+
+function updateReqCard(card, detail) {
+  const done = ['completed', 'partially_completed', 'failed', 'expired'].includes(detail.status);
+  card.querySelector('.head').innerHTML = `
+    ${done ? '' : '<span class="spinner"></span>'}
+    <span class="badge ${detail.status}">${statusLabel(detail.status)}</span>
+    <span class="req-id">#${detail.id}${detail.source_image ? ` · ${detail.source_image.width}×${detail.source_image.height} src` : ''}</span>
+  `;
+  const images = detail.images || [];
+  const outGrid = card.querySelector('.out-grid');
+  outGrid.innerHTML = images.map((img, i) => `
+    <div class="out-card">
+      <img class="lb-trigger" src="${img.url}" loading="lazy" data-idx="${i}" />
+      <div class="out-meta">${img.width}×${img.height} · ${bytesToSize(img.file_size)}</div>
+    </div>
+  `).join('');
+  outGrid.querySelectorAll('.lb-trigger').forEach(el => {
+    el.addEventListener('click', () => openLightbox(images, Number(el.dataset.idx)));
+  });
+  if (detail.errors && detail.errors.length) {
+    const div = document.createElement('div');
+    div.className = 'size-error';
+    div.textContent = detail.errors.map(e => `${e.width}×${e.height}: ${e.message}`).join(' · ');
+    card.appendChild(div);
+  }
+  if (done) updateHistoryEntry(detail.id, { status: detail.status });
+}
+
+function prependHistoryCard(id, sizes) {
+  const wrap = document.getElementById('history');
+  if (wrap.querySelector('.history-empty')) wrap.innerHTML = '';
+  const card = buildReqCardEl(id, sizes);
+  wrap.prepend(card);
+  pollImageRequest(id, { onUpdate: d => updateReqCard(card, d) }).catch(e => {
+    card.querySelector('.head').innerHTML = `<span class="badge failed">error</span><span class="req-id">${e.message}</span>`;
+  });
+}
+
+document.getElementById('clear-history').addEventListener('click', () => {
+  localStorage.removeItem('image-resizer:history');
+  document.getElementById('history').innerHTML = '<div class="history-empty">No requests yet — submit one to see it here.</div>';
+});
+
+renderHistoryFromStorage();
+</script>
+</body>
+</html>

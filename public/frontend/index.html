@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Image Resizer — Prototypes</title>
+<link rel="stylesheet" href="shared/base.css" />
+<script src="shared/theme.js"></script>
+<style>
+  body { padding: 76px 24px 80px; }
+  @media (max-width: 560px) { body { padding-top: 120px; } }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  p.lede { color: var(--text-dim); margin: 0 0 32px; max-width: 640px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    text-decoration: none;
+    color: var(--text);
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(16,18,20,.10); }
+  .card .emoji { font-size: 28px; }
+  .card h2 { margin: 0; font-size: 17px; }
+  .card p { margin: 0; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+  .card .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
+  .card .tags span { font-size: 11px; background: var(--surface-2); color: var(--text-dim); padding: 3px 8px; border-radius: 999px; }
+  .note {
+    margin-top: 36px;
+    font-size: 13px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+  code { background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Image Resizer — frontend prototypes</h1>
+    <p class="lede">Six independent HTML/CSS/JS takes on the same backend (upload → configure N output sizes → poll for results). Every control the API exposes — resize mode, quality, upscale, multiple sizes per request — is tweakable in each variant, and every output image opens full-size in a shared lightbox. Open one, poke at it, then use the tab bar at the top of any variant to hop between them without losing your place.</p>
+
+    <div class="grid">
+      <a class="card" href="variants/v1-sidebar.html">
+        <div class="emoji">🎛️</div>
+        <h2>Sidebar Studio</h2>
+        <p>Persistent left sidebar for upload + global defaults, a scrollable list of size "rows" you add/remove, live results panel on the right. Good for power users iterating on many sizes at once.</p>
+        <div class="tags"><span>dense</span><span>desktop-first</span><span>fast iteration</span></div>
+      </a>
+      <a class="card" href="variants/v2-wizard.html">
+        <div class="emoji">🧭</div>
+        <h2>Guided Wizard</h2>
+        <p>Step-by-step flow: upload → build sizes as cards → review → submit → watch status. Friendlier for first-time or occasional users, one decision at a time.</p>
+        <div class="tags"><span>linear</span><span>beginner-friendly</span><span>mobile-ok</span></div>
+      </a>
+      <a class="card" href="variants/v3-dashboard.html">
+        <div class="emoji">🗂️</div>
+        <h2>Dashboard Cards</h2>
+        <p>Drag-and-drop drop zone, size configs as a card grid, and a persistent request history (localStorage) with a gallery of past outputs. Feels like a small app, not a form.</p>
+        <div class="tags"><span>history</span><span>visual</span><span>drag &amp; drop</span></div>
+      </a>
+      <a class="card" href="variants/v4-raw.html">
+        <div class="emoji">⚙️</div>
+        <h2>Power / Raw JSON</h2>
+        <p>A compact form mirrors a live-editable raw JSON payload — for people who'd rather type the <code>sizes</code> array directly than click sliders. Great for probing edge cases and validation errors.</p>
+        <div class="tags"><span>compact</span><span>JSON-first</span><span>debugging</span></div>
+      </a>
+      <a class="card" href="variants/v5-presets.html">
+        <div class="emoji">🎯</div>
+        <h2>Preset Picker</h2>
+        <p>Big one-click tiles for common shapes (thumbnail, avatar, social, hero…) — each just a pre-filled tweakable size. An "advanced" drawer still exposes raw mode/quality/upscale/custom sizes underneath.</p>
+        <div class="tags"><span>simple by default</span><span>one-click</span><span>progressive disclosure</span></div>
+      </a>
+      <a class="card" href="variants/v6-compare.html">
+        <div class="emoji">🔍</div>
+        <h2>Compare Slider</h2>
+        <p>Every output gets a draggable before/after slider against the original — the fastest way to judge whether a crop mode grabbed the wrong region or quality dropped too far.</p>
+        <div class="tags"><span>visual QA</span><span>before/after</span><span>drag slider</span></div>
+      </a>
+    </div>
+
+    <div class="note">
+      Talks to <code>POST /api/v1/images</code> and <code>GET /api/v1/images/:id</code> on this same origin — no backend changes needed. Run the Goravel app (<code>go run .</code>, default <code>:3000</code>) and open this page from it, e.g. <code>http://localhost:3000/frontend/index.html</code>.
+    </div>
+  </div>
+<script>renderThemeChanger();</script>
+</body>
+</html>

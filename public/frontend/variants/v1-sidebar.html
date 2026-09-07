@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sidebar Studio — Image Resizer</title>
+<link rel="stylesheet" href="../shared/base.css" />
+<script src="../shared/theme.js"></script>
+<style>
+  body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  #variant-bar { flex: 0 0 auto; }
+  .layout { flex: 1; display: flex; min-height: 0; }
+
+  .sidebar {
+    width: 380px;
+    flex: 0 0 auto;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+
+  h1 { font-size: 16px; margin: 0 0 2px; }
+  .sub { font-size: 12px; color: var(--text-dim); margin: 0 0 4px; }
+
+  .dropzone {
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-dim);
+    background: var(--surface-2);
+  }
+  .dropzone.drag { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+  .dropzone img { max-height: 110px; border-radius: 6px; margin-bottom: 8px; display: block; margin-left: auto; margin-right: auto; }
+  .dropzone .fname { font-size: 12px; color: var(--text); word-break: break-all; }
+
+  .section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); display: flex; align-items: center; justify-content: space-between; }
+
+  .global-defaults {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    background: var(--surface-2);
+    border-radius: var(--radius);
+    padding: 12px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--text-dim); }
+  .field input, .field select {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 13px;
+    background: var(--surface);
+  }
+  .field.checkbox { flex-direction: row; align-items: center; gap: 6px; }
+  .field.checkbox label { font-size: 12px; color: var(--text); }
+
+  .size-row {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+    background: var(--surface);
+  }
+  .size-row .row-head { display: flex; align-items: center; justify-content: space-between; }
+  .size-row .row-head .dim { font-weight: 600; font-size: 13px; }
+  .size-row .remove {
+    border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 16px; line-height: 1;
+  }
+  .size-row .remove:hover { color: var(--danger); }
+  .size-row .grid3 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .quality-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); }
+  .quality-row input[type=range] { flex: 1; }
+  .quality-row .qval { width: 28px; text-align: right; color: var(--text); font-weight: 600; }
+
+  .add-size-btn, .btn {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .add-size-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.primary:disabled { opacity: .5; cursor: default; filter: none; }
+  .btn.block { width: 100%; }
+
+  .error-box { background: var(--danger-dim); color: var(--danger); border-radius: 8px; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; }
+
+  /* results */
+  .empty-state { color: var(--text-dim); font-size: 13px; text-align: center; margin-top: 80px; }
+  .request-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .request-card .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .badge { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 600; }
+  .badge.pending, .badge.processing { background: var(--warn-dim); color: var(--warn); }
+  .badge.completed { background: var(--success-dim); color: var(--success); }
+  .badge.partially_completed { background: var(--warn-dim); color: var(--warn); }
+  .badge.failed, .badge.expired { background: var(--danger-dim); color: var(--danger); }
+  .req-id { font-size: 12px; color: var(--text-dim); }
+  .out-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .out-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .out-card img { width: 100%; display: block; aspect-ratio: 1; object-fit: contain; background: var(--surface-2); }
+  .out-meta { padding: 6px 8px; font-size: 11px; color: var(--text-dim); }
+  .out-meta b { color: var(--text); }
+  .size-error { font-size: 12px; color: var(--danger); background: var(--danger-dim); border-radius: 6px; padding: 6px 8px; margin-top: 6px; }
+  .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div id="variant-bar"></div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div>
+        <h1>Sidebar Studio</h1>
+        <p class="sub">Upload, tune every size, submit — all from one panel.</p>
+      </div>
+
+      <div>
+        <div class="section-title">Source image</div>
+        <div class="dropzone" id="dropzone" style="margin-top:8px">
+          <div id="dz-empty">Click or drop an image here<br><span style="font-size:11px">JPEG · PNG · WebP · GIF · TIFF …</span></div>
+          <div id="dz-filled" style="display:none">
+            <img id="dz-preview" />
+            <div class="fname" id="dz-fname"></div>
+          </div>
+        </div>
+        <input type="file" id="file-input" accept="image/*" style="display:none" />
+      </div>
+
+      <div>
+        <div class="section-title">Global defaults <span style="font-weight:400;text-transform:none;">(applied to new rows)</span></div>
+        <div class="global-defaults" style="margin-top:8px">
+          <div class="field">
+            <label>Mode</label>
+            <select id="def-mode"></select>
+          </div>
+          <div class="field">
+            <label>Quality</label>
+            <input type="number" id="def-quality" min="0" max="100" value="80" />
+          </div>
+          <div class="field checkbox" style="grid-column: 1 / -1">
+            <input type="checkbox" id="def-upscale" />
+            <label for="def-upscale">Allow upscale by default</label>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">
+          <span>Output sizes</span>
+          <span id="size-count" style="font-weight:400;text-transform:none;color:var(--text-dim)"></span>
+        </div>
+        <div id="size-rows" style="display:flex;flex-direction:column;gap:10px;margin-top:8px"></div>
+        <button class="add-size-btn block" id="add-size" style="width:100%;margin-top:8px">+ Add size</button>
+      </div>
+
+      <div id="error-box"></div>
+
+      <button class="btn primary block" id="submit-btn">Upload &amp; process</button>
+    </aside>
+
+    <main class="main" id="results">
+      <div class="empty-state">Submit a request to see results here.</div>
+    </main>
+  </div>
+
+<script src="../shared/api.js"></script>
+<script src="../shared/switcher.js"></script>
+<script src="../shared/lightbox.js"></script>
+<script>
+renderVariantBar('sidebar');
+renderThemeChanger('variant-bar');
+initLightbox();
+
+let file = null;
+let rows = []; // { id, width, height, mode, quality, allow_upscale }
+let rowSeq = 1;
+
+const modeSelect = document.getElementById('def-mode');
+MODES.forEach(m => {
+  const o = document.createElement('option');
+  o.value = m; o.textContent = m;
+  modeSelect.appendChild(o);
+});
+modeSelect.value = 'cover';
+
+function newRow(overrides = {}) {
+  return {
+    _id: rowSeq++,
+    width: 800, height: 600,
+    mode: modeSelect.value,
+    quality: Number(document.getElementById('def-quality').value) || 80,
+    allow_upscale: document.getElementById('def-upscale').checked,
+    ...overrides,
+  };
+}
+
+rows.push(newRow());
+rows.push(newRow({ width: 1600, height: 900, mode: 'contain' }));
+
+function renderRows() {
+  const wrap = document.getElementById('size-rows');
+  document.getElementById('size-count').textContent = `${rows.length} configured`;
+  wrap.innerHTML = rows.map(r => `
+    <div class="size-row" data-id="${r._id}">
+      <div class="row-head">
+        <span class="dim">${r.width} × ${r.height}</span>
+        <button class="remove" data-remove="${r._id}" title="Remove">&times;</button>
+      </div>
+      <div class="grid3">
+        <div class="field">
+          <label>Width (px)</label>
+          <input type="number" min="1" data-field="width" data-id="${r._id}" value="${r.width}" />
+        </div>
+        <div class="field">
+          <label>Height (px)</label>
+          <input type="number" min="1" data-field="height" data-id="${r._id}" value="${r.height}" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Mode</label>
+        <select data-field="mode" data-id="${r._id}">
+          ${MODES.map(m => `<option value="${m}" ${m === r.mode ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+      </div>
+      <div class="quality-row">
+        <span>Quality</span>
+        <input type="range" min="0" max="100" data-field="quality" data-id="${r._id}" value="${r.quality}" />
+        <span class="qval">${r.quality}</span>
+      </div>
+      <div class="field checkbox">
+        <input type="checkbox" data-field="allow_upscale" data-id="${r._id}" ${r.allow_upscale ? 'checked' : ''} />
+        <label>Allow upscale</label>
+      </div>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      rows = rows.filter(r => r._id !== Number(btn.dataset.remove));
+      renderRows();
+    });
+  });
+  wrap.querySelectorAll('[data-field]').forEach(el => {
+    el.addEventListener('input', () => {
+      const row = rows.find(r => r._id === Number(el.dataset.id));
+      if (!row) return;
+      const f = el.dataset.field;
+      if (f === 'allow_upscale') row[f] = el.checked;
+      else if (f === 'quality' || f === 'width' || f === 'height') row[f] = Number(el.value);
+      else row[f] = el.value;
+      if (f === 'quality') el.closest('.size-row').querySelector('.qval').textContent = row.quality;
+      if (f === 'width' || f === 'height') el.closest('.size-row').querySelector('.dim').textContent = `${row.width} × ${row.height}`;
+    });
+  });
+}
+renderRows();
+
+document.getElementById('add-size').addEventListener('click', () => {
+  rows.push(newRow());
+  renderRows();
+});
+
+// --- Upload UI ---
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+dropzone.addEventListener('click', () => fileInput.click());
+['dragover'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+
+function setFile(f) {
+  if (!f) return;
+  file = f;
+  document.getElementById('dz-empty').style.display = 'none';
+  document.getElementById('dz-filled').style.display = 'block';
+  document.getElementById('dz-fname').textContent = `${f.name} · ${bytesToSize(f.size)}`;
+  const reader = new FileReader();
+  reader.onload = () => document.getElementById('dz-preview').src = reader.result;
+  reader.readAsDataURL(f);
+}
+
+// --- Submit ---
+document.getElementById('submit-btn').addEventListener('click', async () => {
+  const errBox = document.getElementById('error-box');
+  errBox.innerHTML = '';
+  if (!file) { errBox.innerHTML = '<div class="error-box">Choose an image first.</div>'; return; }
+  if (rows.length === 0) { errBox.innerHTML = '<div class="error-box">Add at least one output size.</div>'; return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+
+  const sizes = rows.map(({ width, height, mode, quality, allow_upscale }) => ({ width, height, mode, quality, allow_upscale }));
+
+  try {
+    const { id } = await submitImage(file, sizes);
+    saveHistoryEntry({ id, createdAt: new Date().toISOString(), sizes });
+    renderRequestCard(id, sizes);
+  } catch (e) {
+    errBox.innerHTML = `<div class="error-box">${e.message}${e.errors ? '\n' + JSON.stringify(e.errors, null, 2) : ''}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Upload & process';
+  }
+});
+
+function renderRequestCard(id, sizes) {
+  const results = document.getElementById('results');
+  if (results.querySelector('.empty-state')) results.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'request-card';
+  card.id = `req-${id}`;
+  card.innerHTML = `
+    <div class="head">
+      <span class="spinner"></span>
+      <span class="badge pending">pending</span>
+      <span class="req-id">Request #${id} · ${sizes.length} size${sizes.length > 1 ? 's' : ''}</span>
+    </div>
+    <div class="out-grid"></div>
+  `;
+  results.prepend(card);
+
+  pollImageRequest(id, {
+    onUpdate: (detail) => updateRequestCard(card, detail),
+  }).catch(e => {
+    card.querySelector('.head').innerHTML = `<span class="badge failed">error</span><span class="req-id">${e.message}</span>`;
+  });
+}
+
+function updateRequestCard(card, detail) {
+  const head = card.querySelector('.head');
+  const done = ['completed', 'partially_completed', 'failed', 'expired'].includes(detail.status);
+  head.innerHTML = `
+    ${done ? '' : '<span class="spinner"></span>'}
+    <span class="badge ${detail.status}">${statusLabel(detail.status)}</span>
+    <span class="req-id">Request #${detail.id}${detail.source_image ? ` · source ${detail.source_image.width}×${detail.source_image.height}` : ''}</span>
+  `;
+  const grid = card.querySelector('.out-grid');
+  const images = detail.images || [];
+  grid.innerHTML = images.map((img, i) => `
+    <div class="out-card">
+      <img class="lb-trigger" src="${img.url}" loading="lazy" data-idx="${i}" />
+      <div class="out-meta"><b>${img.width}×${img.height}</b> · ${img.mode}<br>${img.format} · ${bytesToSize(img.file_size)}</div>
+    </div>
+  `).join('');
+  grid.querySelectorAll('.lb-trigger').forEach(el => {
+    el.addEventListener('click', () => openLightbox(images, Number(el.dataset.idx)));
+  });
+  if (detail.errors && detail.errors.length) {
+    const errDiv = document.createElement('div');
+    errDiv.className = 'size-error';
+    errDiv.textContent = detail.errors.map(e => `${e.width}×${e.height}: ${e.message}`).join(' · ');
+    card.appendChild(errDiv);
+  }
+  if (detail.status === 'failed' && detail.error_message) {
+    card.querySelector('.head').insertAdjacentHTML('beforeend', `<span class="req-id">${detail.error_message}</span>`);
+  }
+  if (done) updateHistoryEntry(detail.id, { status: detail.status });
+}
+</script>
+</body>
+</html>

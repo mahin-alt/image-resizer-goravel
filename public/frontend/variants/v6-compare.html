@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Compare Slider — Image Resizer</title>
+<link rel="stylesheet" href="../shared/base.css" />
+<script src="../shared/theme.js"></script>
+<style>
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 24px 20px 70px; }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin: 0 0 20px; max-width: 640px; }
+
+  .top-row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 22px; }
+  .dropzone {
+    flex: 1; min-width: 220px;
+    border: 2px dashed var(--border); border-radius: 12px; padding: 20px; text-align: center; cursor: pointer; color: var(--text-dim); background: var(--surface);
+  }
+  .dropzone.drag { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+  .dropzone img { max-height: 110px; border-radius: 6px; margin-bottom: 6px; }
+  .dropzone .fname { font-size: 12px; color: var(--text); }
+
+  .size-panel { flex: 1.4; min-width: 280px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .size-panel .title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
+  .size-row { display: grid; grid-template-columns: 62px 62px 1fr 60px auto auto; gap: 6px; align-items: center; margin-bottom: 8px; font-size: 12.5px; }
+  .size-row input, .size-row select { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 12.5px; width: 100%; }
+  .size-row button.rm { border: none; background: none; color: var(--text-dim); cursor: pointer; }
+  .add-size { font-size: 12.5px; border: 1px dashed var(--border); background: none; border-radius: 8px; padding: 6px 10px; cursor: pointer; width: 100%; margin-top: 4px; color: var(--text-dim); }
+  .add-size:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 9px; padding: 9px 16px; font-size: 13.5px; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; width: 100%; margin-top: 10px; }
+  .btn.primary:disabled { opacity: .5; }
+  .error-box { background: var(--danger-dim); color: var(--danger); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; margin-top: 10px; white-space: pre-wrap; }
+
+  .status-line { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; font-size: 13px; }
+  .badge { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 600; }
+  .badge.pending, .badge.processing { background: var(--warn-dim); color: var(--warn); }
+  .badge.completed { background: var(--success-dim); color: var(--success); }
+  .badge.partially_completed { background: var(--warn-dim); color: var(--warn); }
+  .badge.failed, .badge.expired { background: var(--danger-dim); color: var(--danger); }
+  .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .compare-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
+  .compare-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+  .compare-card .cc-title { font-size: 12.5px; font-weight: 700; margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .compare-card .cc-title span.dim { color: var(--text-dim); font-weight: 400; }
+
+  .compare-stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    background: repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 50% / 20px 20px;
+    cursor: ew-resize;
+    user-select: none;
+  }
+  .compare-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+  .compare-stage .after-wrap { position: absolute; inset: 0; overflow: hidden; }
+  .compare-stage .handle {
+    position: absolute; top: 0; bottom: 0; width: 2px; background: #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.2);
+  }
+  .compare-stage .handle::after {
+    content: '◂▸';
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: #fff; color: #16181d; font-size: 10px; padding: 4px 5px; border-radius: 999px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.3); letter-spacing: 2px;
+  }
+  .compare-stage .lbl { position: absolute; bottom: 6px; font-size: 10px; background: rgba(0,0,0,.55); color: #fff; padding: 2px 7px; border-radius: 999px; }
+  .compare-stage .lbl.before { left: 6px; }
+  .compare-stage .lbl.after { right: 6px; }
+  .cc-meta { font-size: 11px; color: var(--text-dim); margin-top: 8px; display: flex; justify-content: space-between; }
+  .cc-meta button { border: none; background: none; color: var(--accent); cursor: pointer; font-size: 11px; }
+</style>
+</head>
+<body>
+  <div id="variant-bar"></div>
+
+  <div class="wrap">
+    <h1>Compare Slider</h1>
+    <p class="sub">Drag the divider on each output to compare it against the original, side by side, at the same frame — handy for judging whether "cover" cropped the wrong thing or quality dipped too far.</p>
+
+    <div class="top-row">
+      <div class="dropzone" id="dropzone">
+        <div id="dz-empty">📷 Click or drop image</div>
+        <div id="dz-filled" style="display:none"><img id="dz-preview" /><div class="fname" id="dz-fname"></div></div>
+      </div>
+      <input type="file" id="file-input" accept="image/*" style="display:none" />
+
+      <div class="size-panel">
+        <div class="title">Output sizes</div>
+        <div id="size-rows"></div>
+        <button class="add-size" id="add-size">+ Add size</button>
+        <button class="btn primary" id="submit-btn">Upload &amp; process</button>
+        <div id="error-box"></div>
+      </div>
+    </div>
+
+    <div class="status-line" id="status-line" style="display:none"></div>
+    <div class="compare-grid" id="compare-grid"></div>
+  </div>
+
+<script src="../shared/api.js"></script>
+<script src="../shared/switcher.js"></script>
+<script src="../shared/lightbox.js"></script>
+<script>
+renderVariantBar('compare');
+renderThemeChanger('variant-bar');
+initLightbox();
+
+let file = null;
+let originalDataUrl = null;
+let sizes = [defaultSize({ width: 800, height: 600, mode: 'cover', _id: 0 }), defaultSize({ width: 500, height: 500, mode: 'crop', _id: 1 })];
+let seq = 2;
+
+function renderSizeRows() {
+  document.getElementById('size-rows').innerHTML = sizes.map(s => `
+    <div class="size-row" data-id="${s._id}">
+      <input type="number" min="1" data-field="width" value="${s.width}" />
+      <input type="number" min="1" data-field="height" value="${s.height}" />
+      <select data-field="mode">${MODES.map(m => `<option value="${m}" ${m === s.mode ? 'selected' : ''}>${m}</option>`).join('')}</select>
+      <input type="number" min="0" max="100" data-field="quality" value="${s.quality}" title="quality" />
+      <label title="allow upscale" style="font-size:11px"><input type="checkbox" data-field="allow_upscale" ${s.allow_upscale ? 'checked' : ''} /></label>
+      <button class="rm" data-remove="${s._id}">&times;</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('#size-rows [data-field]').forEach(el => el.addEventListener('input', () => {
+    const row = el.closest('.size-row');
+    const s = sizes.find(s => s._id === Number(row.dataset.id));
+    const f = el.dataset.field;
+    if (f === 'allow_upscale') s[f] = el.checked;
+    else if (f === 'mode') s[f] = el.value;
+    else s[f] = Number(el.value);
+  }));
+  document.querySelectorAll('#size-rows [data-remove]').forEach(btn => btn.addEventListener('click', () => {
+    sizes = sizes.filter(s => s._id !== Number(btn.dataset.remove));
+    renderSizeRows();
+  }));
+}
+renderSizeRows();
+document.getElementById('add-size').addEventListener('click', () => { sizes.push(defaultSize({ _id: seq++ })); renderSizeRows(); });
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+dropzone.addEventListener('click', () => fileInput.click());
+['dragover'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+function setFile(f) {
+  if (!f) return;
+  file = f;
+  document.getElementById('dz-empty').style.display = 'none';
+  document.getElementById('dz-filled').style.display = 'block';
+  document.getElementById('dz-fname').textContent = `${f.name} · ${bytesToSize(f.size)}`;
+  const reader = new FileReader();
+  reader.onload = () => { originalDataUrl = reader.result; document.getElementById('dz-preview').src = originalDataUrl; };
+  reader.readAsDataURL(f);
+}
+
+document.getElementById('submit-btn').addEventListener('click', async () => {
+  const errBox = document.getElementById('error-box');
+  errBox.innerHTML = '';
+  if (!file) { errBox.innerHTML = '<div class="error-box">Choose an image first.</div>'; return; }
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  const payload = sizes.map(({ width, height, mode, quality, allow_upscale }) => ({ width, height, mode, quality, allow_upscale }));
+  try {
+    const { id } = await submitImage(file, payload);
+    saveHistoryEntry({ id, createdAt: new Date().toISOString(), sizes: payload });
+    document.getElementById('status-line').style.display = 'flex';
+    startPolling(id);
+  } catch (e) {
+    errBox.innerHTML = `<div class="error-box">${e.message}${e.errors ? '\n' + JSON.stringify(e.errors, null, 2) : ''}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Upload & process';
+  }
+});
+
+function startPolling(id) {
+  pollImageRequest(id, {
+    onUpdate: (detail) => {
+      const done = ['completed', 'partially_completed', 'failed', 'expired'].includes(detail.status);
+      document.getElementById('status-line').innerHTML = `
+        ${done ? '' : '<span class="spinner"></span>'}
+        <span class="badge ${detail.status}">${statusLabel(detail.status)}</span>
+        <span>Request #${detail.id}</span>
+      `;
+      renderCompareGrid(detail.images || []);
+      if (done) updateHistoryEntry(id, { status: detail.status });
+    },
+  }).catch(e => {
+    document.getElementById('status-line').innerHTML = `<span class="badge failed">error</span><span>${e.message}</span>`;
+  });
+}
+
+function renderCompareGrid(images) {
+  const grid = document.getElementById('compare-grid');
+  grid.innerHTML = images.map((img, i) => `
+    <div class="compare-card">
+      <div class="cc-title"><span>${img.width}×${img.height}</span><span class="dim">${img.mode} · q — ${img.format}</span></div>
+      <div class="compare-stage" data-idx="${i}">
+        <img src="${originalDataUrl}" />
+        <div class="after-wrap" style="width:50%">
+          <img src="${img.url}" style="width:${grid.clientWidth || 300}px;max-width:none;" class="after-img" />
+        </div>
+        <div class="handle" style="left:50%"></div>
+        <span class="lbl before">Original</span>
+        <span class="lbl after">Resized</span>
+      </div>
+      <div class="cc-meta">
+        <span>${bytesToSize(img.file_size)}</span>
+        <button data-open="${i}">View full size ↗</button>
+      </div>
+    </div>
+  `).join('');
+
+  // Fix after-img sizing to match stage exactly (object-fit contain equivalent via matching wrapper size)
+  grid.querySelectorAll('.compare-stage').forEach((stage) => {
+    const afterWrap = stage.querySelector('.after-wrap');
+    const afterImg = stage.querySelector('.after-img');
+    const resize = () => {
+      const rect = stage.getBoundingClientRect();
+      afterImg.style.width = rect.width + 'px';
+      afterImg.style.height = rect.height + 'px';
+      afterImg.style.objectFit = 'contain';
+      afterImg.style.position = 'absolute';
+      afterImg.style.top = 0; afterImg.style.left = 0;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    let dragging = false;
+    const setSplit = (clientX) => {
+      const rect = stage.getBoundingClientRect();
+      let pct = ((clientX - rect.left) / rect.width) * 100;
+      pct = Math.max(0, Math.min(100, pct));
+      afterWrap.style.width = pct + '%';
+      stage.querySelector('.handle').style.left = pct + '%';
+    };
+    stage.addEventListener('mousedown', (e) => { dragging = true; setSplit(e.clientX); });
+    window.addEventListener('mousemove', (e) => { if (dragging) setSplit(e.clientX); });
+    window.addEventListener('mouseup', () => dragging = false);
+    stage.addEventListener('touchstart', (e) => { dragging = true; setSplit(e.touches[0].clientX); }, { passive: true });
+    stage.addEventListener('touchmove', (e) => { if (dragging) setSplit(e.touches[0].clientX); }, { passive: true });
+    stage.addEventListener('touchend', () => dragging = false);
+  });
+
+  grid.querySelectorAll('[data-open]').forEach(btn => {
+    btn.addEventListener('click', () => openLightbox(images, Number(btn.dataset.open)));
+  });
+}
+</script>
+</body>
+</html>
