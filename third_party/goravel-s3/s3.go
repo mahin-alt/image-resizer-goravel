@@ -13,6 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/goravel/framework/http"
 	"github.com/goravel/framework/support/color"
@@ -70,6 +72,23 @@ func NewS3(ctx context.Context, config config.Config, disk string) (*S3, error) 
 		// fully-buffered signed request body instead.
 		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
 		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired,
+		APIOptions: []func(*middleware.Stack) error{
+			func(stack *middleware.Stack) error {
+				// Reverse proxies (e.g. Cloudflare / Nginx) in front of S3/MinIO
+				// strip or alter the Accept-Encoding header before forwarding to the origin.
+				// If Accept-Encoding is signed, MinIO rejects requests with SignatureDoesNotMatch.
+				_, _ = stack.Finalize.Remove("DisableAcceptEncodingGzip")
+				return stack.Finalize.Insert(middleware.FinalizeMiddlewareFunc("StripAcceptEncoding",
+					func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
+						out middleware.FinalizeOutput, metadata middleware.Metadata, err error,
+					) {
+						if req, ok := in.Request.(*smithyhttp.Request); ok {
+							req.Header.Del("Accept-Encoding")
+						}
+						return next.HandleFinalize(ctx, in)
+					}), "Signing", middleware.Before)
+			},
+		},
 	}
 
 	if endpoint != "" {
