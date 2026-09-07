@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Preset Picker — Image Resizer</title>
+<link rel="stylesheet" href="../shared/base.css" />
+<script src="../shared/theme.js"></script>
+<style>
+  .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 70px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin: 0 0 26px; }
+
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 14px;
+    padding: 32px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--text-dim);
+    background: var(--surface);
+    margin-bottom: 26px;
+  }
+  .dropzone.drag { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+  .dropzone img { max-height: 160px; border-radius: 8px; margin-bottom: 8px; }
+  .dropzone .fname { font-size: 12px; color: var(--text); }
+
+  .section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); margin-bottom: 12px; }
+
+  .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-bottom: 8px; }
+  .preset-tile {
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    cursor: pointer;
+    background: var(--surface);
+    text-align: left;
+    position: relative;
+    transition: border-color .1s ease;
+  }
+  .preset-tile:hover { border-color: var(--accent); }
+  .preset-tile.selected { border-color: var(--accent); background: var(--accent-dim); }
+  .preset-tile .icon { font-size: 22px; margin-bottom: 6px; display: block; }
+  .preset-tile .name { font-weight: 700; font-size: 13.5px; }
+  .preset-tile .dims { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+  .preset-tile .check {
+    position: absolute; top: 10px; right: 10px;
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 1.5px solid var(--border); background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: transparent;
+  }
+  .preset-tile.selected .check { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  details#advanced { margin: 18px 0; }
+  details#advanced summary { cursor: pointer; font-size: 12.5px; color: var(--text-dim); font-weight: 600; }
+  .adv-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .adv-row {
+    display: grid;
+    grid-template-columns: 70px 70px 1fr 90px auto auto;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    font-size: 12.5px;
+  }
+  .adv-row input, .adv-row select { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 12.5px; width: 100%; }
+  .adv-row .rm { border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 15px; }
+  .add-custom { font-size: 12.5px; border: 1px dashed var(--border); background: none; border-radius: 8px; padding: 8px 10px; cursor: pointer; width: 100%; text-align: center; color: var(--text-dim); }
+  .add-custom:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 12px 20px; font-size: 14.5px; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; width: 100%; }
+  .btn.primary:disabled { opacity: .5; }
+  .error-box { background: var(--danger-dim); color: var(--danger); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; margin-top: 12px; white-space: pre-wrap; }
+
+  .results { margin-top: 26px; display: flex; flex-direction: column; gap: 10px; }
+  .result-row {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  }
+  .result-row img { width: 56px; height: 56px; object-fit: contain; border-radius: 6px; background: var(--surface-2); cursor: zoom-in; }
+  .result-row .rr-name { font-weight: 700; font-size: 13px; }
+  .result-row .rr-sub { font-size: 11.5px; color: var(--text-dim); }
+  .badge { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 600; margin-left: auto; }
+  .badge.pending, .badge.processing { background: var(--warn-dim); color: var(--warn); }
+  .badge.completed { background: var(--success-dim); color: var(--success); }
+  .badge.partially_completed { background: var(--warn-dim); color: var(--warn); }
+  .badge.failed, .badge.expired { background: var(--danger-dim); color: var(--danger); }
+  .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div id="variant-bar"></div>
+
+  <div class="wrap">
+    <h1>Preset Picker</h1>
+    <p class="sub">Pick the common output shapes you need with one click. Every preset is just a pre-filled version of the same tweakable size config — open "Customize sizes" to edit or add your own.</p>
+
+    <div class="dropzone" id="dropzone">
+      <div id="dz-empty">📷 Click or drop an image here</div>
+      <div id="dz-filled" style="display:none"><img id="dz-preview" /><div class="fname" id="dz-fname"></div></div>
+    </div>
+    <input type="file" id="file-input" accept="image/*" style="display:none" />
+
+    <div class="section-title">Choose one or more presets</div>
+    <div class="preset-grid" id="preset-grid"></div>
+
+    <details id="advanced">
+      <summary>Customize sizes (edit mode / quality / upscale, or add a fully custom size) →</summary>
+      <div class="adv-list" id="adv-list"></div>
+      <button class="add-custom" id="add-custom" style="margin-top:10px">+ Add a custom size</button>
+    </details>
+
+    <div id="error-box"></div>
+    <button class="btn primary" id="submit-btn" style="margin-top:8px">Generate</button>
+
+    <div class="results" id="results"></div>
+  </div>
+
+<script src="../shared/api.js"></script>
+<script src="../shared/switcher.js"></script>
+<script src="../shared/lightbox.js"></script>
+<script>
+renderVariantBar('presets');
+renderThemeChanger('variant-bar');
+initLightbox();
+
+const PRESETS = [
+  { key: 'thumb',   icon: '🔳', name: 'Thumbnail', width: 150,  height: 150,  mode: 'crop',    quality: 80 },
+  { key: 'avatar',  icon: '🙂', name: 'Avatar',    width: 400,  height: 400,  mode: 'crop',    quality: 85 },
+  { key: 'social',  icon: '🖼️', name: 'Social post', width: 1200, height: 630, mode: 'cover',  quality: 82 },
+  { key: 'hero',    icon: '🌄', name: 'Hero banner', width: 1920, height: 1080, mode: 'cover', quality: 80 },
+  { key: 'card',    icon: '🗂️', name: 'Card preview', width: 600, height: 400, mode: 'contain', quality: 80 },
+  { key: 'square',  icon: '⬛', name: 'Square fit',  width: 1080, height: 1080, mode: 'contain', quality: 85 },
+];
+
+let file = null;
+let selected = new Set(['thumb', 'social']);
+let customSizes = []; // { _id, width, height, mode, quality, allow_upscale }
+let customSeq = 0;
+
+function renderPresets() {
+  document.getElementById('preset-grid').innerHTML = PRESETS.map(p => `
+    <button type="button" class="preset-tile ${selected.has(p.key) ? 'selected' : ''}" data-key="${p.key}">
+      <span class="check">&#10003;</span>
+      <span class="icon">${p.icon}</span>
+      <span class="name">${p.name}</span>
+      <div class="dims">${p.width}×${p.height} · ${p.mode}</div>
+    </button>
+  `).join('');
+  document.querySelectorAll('.preset-tile').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.key;
+      selected.has(key) ? selected.delete(key) : selected.add(key);
+      renderPresets();
+    });
+  });
+}
+renderPresets();
+
+function renderAdvanced() {
+  document.getElementById('adv-list').innerHTML = customSizes.map(s => `
+    <div class="adv-row" data-id="${s._id}">
+      <input type="number" min="1" data-field="width" value="${s.width}" placeholder="W" />
+      <input type="number" min="1" data-field="height" value="${s.height}" placeholder="H" />
+      <select data-field="mode">${MODES.map(m => `<option value="${m}" ${m === s.mode ? 'selected' : ''}>${m}</option>`).join('')}</select>
+      <input type="number" min="0" max="100" data-field="quality" value="${s.quality}" placeholder="Q" />
+      <label style="display:flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" data-field="allow_upscale" ${s.allow_upscale ? 'checked' : ''} /> upscale</label>
+      <button class="rm" data-remove="${s._id}">&times;</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('#adv-list [data-field]').forEach(el => el.addEventListener('input', () => {
+    const row = el.closest('.adv-row');
+    const s = customSizes.find(s => s._id === Number(row.dataset.id));
+    const f = el.dataset.field;
+    if (f === 'allow_upscale') s[f] = el.checked;
+    else if (f === 'mode') s[f] = el.value;
+    else s[f] = Number(el.value);
+  }));
+  document.querySelectorAll('#adv-list [data-remove]').forEach(btn => btn.addEventListener('click', () => {
+    customSizes = customSizes.filter(s => s._id !== Number(btn.dataset.remove));
+    renderAdvanced();
+  }));
+}
+renderAdvanced();
+
+document.getElementById('add-custom').addEventListener('click', () => {
+  customSizes.push(defaultSize({ _id: customSeq++ }));
+  document.getElementById('advanced').open = true;
+  renderAdvanced();
+});
+
+// upload
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+dropzone.addEventListener('click', () => fileInput.click());
+['dragover'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+function setFile(f) {
+  if (!f) return;
+  file = f;
+  document.getElementById('dz-empty').style.display = 'none';
+  document.getElementById('dz-filled').style.display = 'block';
+  document.getElementById('dz-fname').textContent = `${f.name} · ${bytesToSize(f.size)}`;
+  const reader = new FileReader();
+  reader.onload = () => document.getElementById('dz-preview').src = reader.result;
+  reader.readAsDataURL(f);
+}
+
+document.getElementById('submit-btn').addEventListener('click', async () => {
+  const errBox = document.getElementById('error-box');
+  errBox.innerHTML = '';
+  if (!file) { errBox.innerHTML = '<div class="error-box">Choose an image first.</div>'; return; }
+
+  const presetSizes = PRESETS.filter(p => selected.has(p.key)).map(p => ({ width: p.width, height: p.height, mode: p.mode, quality: p.quality, allow_upscale: false }));
+  const custom = customSizes.map(({ width, height, mode, quality, allow_upscale }) => ({ width, height, mode, quality, allow_upscale }));
+  const sizes = [...presetSizes, ...custom];
+  if (!sizes.length) { errBox.innerHTML = '<div class="error-box">Pick at least one preset or add a custom size.</div>'; return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  try {
+    const { id } = await submitImage(file, sizes);
+    saveHistoryEntry({ id, createdAt: new Date().toISOString(), sizes });
+    renderResultCard(id, sizes.length);
+  } catch (e) {
+    errBox.innerHTML = `<div class="error-box">${e.message}${e.errors ? '\n' + JSON.stringify(e.errors, null, 2) : ''}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Generate';
+  }
+});
+
+function renderResultCard(id, count) {
+  const results = document.getElementById('results');
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `<div class="section-title" style="margin-top:6px">Request #${id} <span class="badge pending" id="badge-${id}">pending</span></div><div id="rows-${id}"></div>`;
+  results.prepend(wrap);
+
+  pollImageRequest(id, {
+    onUpdate: (detail) => {
+      const badge = document.getElementById(`badge-${id}`);
+      badge.className = `badge ${detail.status}`;
+      badge.textContent = statusLabel(detail.status);
+      const images = detail.images || [];
+      const rows = document.getElementById(`rows-${id}`);
+      rows.innerHTML = images.map((img, i) => `
+        <div class="result-row">
+          <img class="lb-trigger" src="${img.url}" data-idx="${i}" loading="lazy" />
+          <div>
+            <div class="rr-name">${img.width}×${img.height} · ${img.mode}</div>
+            <div class="rr-sub">${img.format} · ${bytesToSize(img.file_size)}</div>
+          </div>
+        </div>
+      `).join('');
+      rows.querySelectorAll('.lb-trigger').forEach(el => el.addEventListener('click', () => openLightbox(images, Number(el.dataset.idx))));
+      if (detail.errors && detail.errors.length) {
+        rows.innerHTML += `<div class="error-box">${detail.errors.map(e => `${e.width}×${e.height}: ${e.message}`).join(' · ')}</div>`;
+      }
+      if (['completed', 'partially_completed', 'failed', 'expired'].includes(detail.status)) {
+        updateHistoryEntry(id, { status: detail.status });
+      }
+    },
+  }).catch(e => {
+    document.getElementById(`badge-${id}`).textContent = 'error: ' + e.message;
+  });
+}
+</script>
+</body>
+</html>

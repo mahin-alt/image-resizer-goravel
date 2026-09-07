@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Guided Wizard — Image Resizer</title>
+<link rel="stylesheet" href="../shared/base.css" />
+<script src="../shared/theme.js"></script>
+<style>
+  body { padding-bottom: 60px; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 28px 20px; }
+
+  .steps { display: flex; gap: 8px; margin-bottom: 28px; }
+  .step-dot {
+    flex: 1;
+    text-align: center;
+    padding: 10px 6px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .step-dot.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); font-weight: 700; }
+  .step-dot.done { color: var(--success); }
+  .step-dot b { display: block; font-size: 15px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px; box-shadow: var(--shadow); }
+  .panel h2 { margin: 0 0 4px; font-size: 19px; }
+  .panel .hint { color: var(--text-dim); font-size: 13px; margin: 0 0 20px; }
+
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--text-dim);
+  }
+  .dropzone.drag { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+  .dropzone img { max-height: 220px; border-radius: 8px; margin-bottom: 10px; }
+  .dropzone .fname { font-size: 13px; color: var(--text); }
+
+  .size-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+    position: relative;
+  }
+  .size-card .remove { position: absolute; top: 10px; right: 12px; border: none; background: none; font-size: 18px; color: var(--text-dim); cursor: pointer; }
+  .size-card .remove:hover { color: var(--danger); }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--text-dim); }
+  .field input, .field select { border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; font-size: 14px; }
+  .mode-picker { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mode-picker button {
+    border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+  }
+  .mode-picker button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .quality-row { display: flex; align-items: center; gap: 10px; }
+  .quality-row input[type=range] { flex: 1; }
+  .checkbox-row { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 13px; }
+
+  .add-card-btn {
+    width: 100%; border: 1.5px dashed var(--border); background: none; border-radius: 12px; padding: 14px; font-size: 13px; color: var(--text-dim); cursor: pointer;
+  }
+  .add-card-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .nav-row { display: flex; justify-content: space-between; margin-top: 24px; }
+  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 9px; padding: 10px 18px; font-size: 14px; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.primary:disabled { opacity: .5; }
+  .btn:disabled { opacity: .4; cursor: default; }
+
+  .review-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .review-row:last-child { border-bottom: none; }
+
+  .error-box { background: var(--danger-dim); color: var(--danger); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-top: 14px; white-space: pre-wrap; }
+
+  .status-line { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .badge { font-size: 12px; padding: 4px 11px; border-radius: 999px; font-weight: 600; }
+  .badge.pending, .badge.processing { background: var(--warn-dim); color: var(--warn); }
+  .badge.completed { background: var(--success-dim); color: var(--success); }
+  .badge.partially_completed { background: var(--warn-dim); color: var(--warn); }
+  .badge.failed, .badge.expired { background: var(--danger-dim); color: var(--danger); }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .out-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .out-card { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .out-card img { width: 100%; display: block; aspect-ratio: 1; object-fit: contain; background: var(--surface-2); }
+  .out-meta { padding: 8px 10px; font-size: 12px; color: var(--text-dim); }
+  .out-meta b { color: var(--text); }
+</style>
+</head>
+<body>
+  <div id="variant-bar"></div>
+
+  <div class="wrap">
+    <div class="steps" id="steps"></div>
+    <div class="panel" id="panel"></div>
+  </div>
+
+<script src="../shared/api.js"></script>
+<script src="../shared/switcher.js"></script>
+<script src="../shared/lightbox.js"></script>
+<script>
+renderVariantBar('wizard');
+renderThemeChanger('variant-bar');
+initLightbox();
+
+const STEP_NAMES = ['Upload', 'Configure', 'Review', 'Result'];
+let step = 0;
+let file = null;
+let sizes = [defaultSize({ width: 800, height: 600, mode: 'cover' })];
+let sizeSeq = 1;
+sizes[0]._id = 0;
+
+function renderSteps() {
+  document.getElementById('steps').innerHTML = STEP_NAMES.map((name, i) => `
+    <div class="step-dot ${i === step ? 'active' : i < step ? 'done' : ''}">
+      <b>${i < step ? '✓' : i + 1}</b>${name}
+    </div>
+  `).join('');
+}
+
+function goto(n) { step = n; render(); }
+
+function render() {
+  renderSteps();
+  const panel = document.getElementById('panel');
+  if (step === 0) panel.innerHTML = renderUpload();
+  else if (step === 1) panel.innerHTML = renderConfigure();
+  else if (step === 2) panel.innerHTML = renderReview();
+  else panel.innerHTML = renderResult();
+  wireStep();
+}
+
+function renderUpload() {
+  return `
+    <h2>1. Choose an image</h2>
+    <p class="hint">Any common format works — JPEG, PNG, WebP, GIF, TIFF. It'll be re-encoded to WebP for every output size.</p>
+    <div class="dropzone" id="dropzone">
+      ${file ? `<img id="preview" /><div class="fname" id="fname"></div>` : `Click or drop an image here`}
+    </div>
+    <input type="file" id="file-input" accept="image/*" style="display:none" />
+    <div class="nav-row">
+      <span></span>
+      <button class="btn primary" id="next-btn" ${file ? '' : 'disabled'}>Next: configure sizes →</button>
+    </div>
+  `;
+}
+
+function renderConfigure() {
+  return `
+    <h2>2. Configure output sizes</h2>
+    <p class="hint">Add as many target sizes as you need (up to 10 per request). Each has its own mode, quality and upscale rule.</p>
+    <div id="size-cards">
+      ${sizes.map(sizeCardHtml).join('')}
+    </div>
+    <button class="add-card-btn" id="add-size">+ Add another size</button>
+    <div class="nav-row">
+      <button class="btn" id="back-btn">← Back</button>
+      <button class="btn primary" id="next-btn" ${sizes.length ? '' : 'disabled'}>Next: review →</button>
+    </div>
+  `;
+}
+
+function sizeCardHtml(s) {
+  return `
+  <div class="size-card" data-id="${s._id}">
+    ${sizes.length > 1 ? `<button class="remove" data-remove="${s._id}">&times;</button>` : ''}
+    <div class="field-row">
+      <div class="field"><label>Width (px)</label><input type="number" min="1" data-field="width" data-id="${s._id}" value="${s.width}" /></div>
+      <div class="field"><label>Height (px)</label><input type="number" min="1" data-field="height" data-id="${s._id}" value="${s.height}" /></div>
+    </div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Fit mode</label>
+      <div class="mode-picker">
+        ${MODES.map(m => `<button type="button" data-mode="${m}" data-id="${s._id}" class="${m === s.mode ? 'active' : ''}">${m}</button>`).join('')}
+      </div>
+    </div>
+    <div class="field">
+      <label>Quality (${s.quality})</label>
+      <div class="quality-row"><input type="range" min="0" max="100" data-field="quality" data-id="${s._id}" value="${s.quality}" /></div>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" data-field="allow_upscale" data-id="${s._id}" ${s.allow_upscale ? 'checked' : ''} id="up-${s._id}" />
+      <label for="up-${s._id}">Allow upscaling past the source's native size</label>
+    </div>
+  </div>`;
+}
+
+function renderReview() {
+  return `
+    <h2>3. Review &amp; submit</h2>
+    <p class="hint">${file.name} (${bytesToSize(file.size)}) → ${sizes.length} output${sizes.length > 1 ? 's' : ''}.</p>
+    ${sizes.map(s => `
+      <div class="review-row">
+        <span><b>${s.width}×${s.height}</b> · ${s.mode}</span>
+        <span>q${s.quality} ${s.allow_upscale ? '· upscale ok' : ''}</span>
+      </div>
+    `).join('')}
+    <div id="review-error"></div>
+    <div class="nav-row">
+      <button class="btn" id="back-btn">← Back</button>
+      <button class="btn primary" id="submit-btn">Upload &amp; process →</button>
+    </div>
+  `;
+}
+
+function renderResult() {
+  return `
+    <div class="status-line" id="status-line">
+      <span class="spinner"></span><span class="badge pending">pending</span><span>Request #${window.__reqId}</span>
+    </div>
+    <div class="out-grid" id="out-grid"></div>
+    <div id="result-error"></div>
+    <div class="nav-row">
+      <button class="btn" id="restart-btn">Start a new request</button>
+      <span></span>
+    </div>
+  `;
+}
+
+function wireStep() {
+  if (step === 0) {
+    const dz = document.getElementById('dropzone');
+    const input = document.getElementById('file-input');
+    dz.addEventListener('click', () => input.click());
+    ['dragover'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove('drag'); }));
+    dz.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+    input.addEventListener('change', e => setFile(e.target.files[0]));
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => document.getElementById('preview').src = reader.result;
+      reader.readAsDataURL(file);
+      document.getElementById('fname').textContent = `${file.name} · ${bytesToSize(file.size)}`;
+    }
+    document.getElementById('next-btn').addEventListener('click', () => goto(1));
+  } else if (step === 1) {
+    document.getElementById('back-btn').addEventListener('click', () => goto(0));
+    document.getElementById('next-btn').addEventListener('click', () => goto(2));
+    document.getElementById('add-size').addEventListener('click', () => {
+      sizes.push({ ...defaultSize(), _id: ++sizeSeq });
+      render();
+    });
+    document.querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', () => {
+      sizes = sizes.filter(s => s._id !== Number(btn.dataset.remove));
+      render();
+    }));
+    document.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
+      const s = sizes.find(s => s._id === Number(btn.dataset.id));
+      s.mode = btn.dataset.mode;
+      render();
+    }));
+    document.querySelectorAll('[data-field]').forEach(el => el.addEventListener('input', () => {
+      const s = sizes.find(s => s._id === Number(el.dataset.id));
+      const f = el.dataset.field;
+      if (f === 'allow_upscale') s[f] = el.checked;
+      else if (f === 'quality' || f === 'width' || f === 'height') s[f] = Number(el.value);
+      if (f === 'quality') el.closest('.size-card').querySelector('label').textContent = `Quality (${s.quality})`;
+    }));
+  } else if (step === 2) {
+    document.getElementById('back-btn').addEventListener('click', () => goto(1));
+    document.getElementById('submit-btn').addEventListener('click', submit);
+  } else if (step === 3) {
+    document.getElementById('restart-btn').addEventListener('click', () => {
+      file = null; sizes = [{ ...defaultSize(), _id: 0 }]; sizeSeq = 0; window.__reqId = null;
+      goto(0);
+    });
+  }
+}
+
+function setFile(f) {
+  if (!f) return;
+  file = f;
+  render();
+}
+
+async function submit() {
+  const btn = document.getElementById('submit-btn');
+  const errBox = document.getElementById('review-error');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  const payload = sizes.map(({ width, height, mode, quality, allow_upscale }) => ({ width, height, mode, quality, allow_upscale }));
+  try {
+    const { id } = await submitImage(file, payload);
+    saveHistoryEntry({ id, createdAt: new Date().toISOString(), sizes: payload });
+    window.__reqId = id;
+    goto(3);
+    pollImageRequest(id, { onUpdate: renderStatus }).catch(e => {
+      document.getElementById('result-error').innerHTML = `<div class="error-box">${e.message}</div>`;
+    });
+  } catch (e) {
+    errBox.innerHTML = `<div class="error-box">${e.message}${e.errors ? '\n' + JSON.stringify(e.errors, null, 2) : ''}</div>`;
+    btn.disabled = false; btn.textContent = 'Upload & process →';
+  }
+}
+
+function renderStatus(detail) {
+  const done = ['completed', 'partially_completed', 'failed', 'expired'].includes(detail.status);
+  document.getElementById('status-line').innerHTML = `
+    ${done ? '' : '<span class="spinner"></span>'}
+    <span class="badge ${detail.status}">${statusLabel(detail.status)}</span>
+    <span>Request #${detail.id}${detail.source_image ? ` · source ${detail.source_image.width}×${detail.source_image.height}` : ''}</span>
+  `;
+  const images = detail.images || [];
+  const outGrid = document.getElementById('out-grid');
+  outGrid.innerHTML = images.map((img, i) => `
+    <div class="out-card">
+      <img class="lb-trigger" src="${img.url}" loading="lazy" data-idx="${i}" />
+      <div class="out-meta"><b>${img.width}×${img.height}</b> · ${img.mode}<br>${img.format} · ${bytesToSize(img.file_size)}</div>
+    </div>
+  `).join('');
+  outGrid.querySelectorAll('.lb-trigger').forEach(el => {
+    el.addEventListener('click', () => openLightbox(images, Number(el.dataset.idx)));
+  });
+  if (detail.errors && detail.errors.length) {
+    document.getElementById('result-error').innerHTML = `<div class="error-box">${detail.errors.map(e => `${e.width}×${e.height}: ${e.message}`).join('\n')}</div>`;
+  }
+  if (done) updateHistoryEntry(detail.id, { status: detail.status });
+}
+
+render();
+</script>
+</body>
+</html>
