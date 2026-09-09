@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "image-resizer-goravel",
+      "runtimeExecutable": "go",
+      "runtimeArgs": ["run", "."],
+      "port": 3000
+    }
+  ]
+}

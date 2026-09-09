@@ -161,7 +161,10 @@ function renderConfigure() {
     </div>
     <button class="add-card-btn" id="add-size">+ Add another size</button>
     <div class="nav-row">
-      <button class="btn" id="back-btn">← Back</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="back-btn">← Back</button>
+        <button class="btn" id="start-over-btn" title="Clear the uploaded image and start over from step 1 (keeps any previous request results)">Start over</button>
+      </div>
       <button class="btn primary" id="next-btn" ${sizes.length ? '' : 'disabled'}>Next: review →</button>
     </div>
   `;
@@ -246,6 +249,13 @@ function wireStep() {
     document.getElementById('add-size').addEventListener('click', () => {
       sizes.push({ ...defaultSize(), _id: ++sizeSeq });
       render();
+    });
+    // "Start over": clears the uploaded image and sizes, then jumps back to step 1 —
+    // same reset the "Start a new request" button does from the result step. Any
+    // earlier request results (localStorage history) are untouched.
+    document.getElementById('start-over-btn').addEventListener('click', () => {
+      file = null; sizes = [{ ...defaultSize(), _id: 0 }]; sizeSeq = 0; window.__reqId = null;
+      goto(0);
     });
     document.querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', () => {
       sizes = sizes.filter(s => s._id !== Number(btn.dataset.remove));

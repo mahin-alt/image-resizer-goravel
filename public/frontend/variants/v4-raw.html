@@ -74,7 +74,10 @@
       </div>
 
       <div class="panel">
-        <div class="title">Form view <span style="font-weight:400">(mirrors JSON →)</span></div>
+        <div class="title">
+          <span>Form view <span style="font-weight:400">(mirrors JSON →)</span></span>
+          <button type="button" id="start-over" title="Clear the uploaded image and reset sizes to default (keeps the request log)" style="font-family:-apple-system, sans-serif;border:none;background:none;color:var(--text-dim);cursor:pointer;text-decoration:underline;font-size:11px;padding:0">start over</button>
+        </div>
         <table class="form-view">
           <thead><tr><th>W</th><th>H</th><th>Mode</th><th>Q</th><th>Upsc.</th><th></th></tr></thead>
           <tbody id="form-body"></tbody>
@@ -210,6 +213,21 @@ function setFile(f) {
   reader.onload = () => document.getElementById('dz-preview').src = reader.result;
   reader.readAsDataURL(f);
 }
+
+// "Start over": clears the uploaded image and resets sizes (form + JSON editor) back
+// to defaults. The request log on the right is untouched — previously sent requests
+// stay visible.
+document.getElementById('start-over').addEventListener('click', () => {
+  file = null;
+  fileInput.value = '';
+  document.getElementById('dz-empty').style.display = '';
+  document.getElementById('dz-filled').style.display = 'none';
+  document.getElementById('dz-preview').src = '';
+  document.getElementById('dz-fname').textContent = '';
+  sizes = [defaultSize({ width: 800, height: 600, mode: 'cover', _id: seq++ }), defaultSize({ width: 1600, height: 900, mode: 'contain', _id: seq++ })];
+  renderForm();
+  syncJsonFromSizes();
+});
 
 document.getElementById('submit-btn').addEventListener('click', async () => {
   const errBox = document.getElementById('submit-error');
