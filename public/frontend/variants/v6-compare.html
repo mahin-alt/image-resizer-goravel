@@ -91,7 +91,10 @@
       <input type="file" id="file-input" accept="image/*" style="display:none" />
 
       <div class="size-panel">
-        <div class="title">Output sizes</div>
+        <div class="title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Output sizes</span>
+          <button type="button" id="start-over" title="Clear the uploaded image and reset sizes to default (keeps compare results below)" style="text-transform:none;font-weight:400;border:none;background:none;color:var(--text-dim);cursor:pointer;text-decoration:underline;font-size:11px;padding:0">start over</button>
+        </div>
         <div id="size-rows"></div>
         <button class="add-size" id="add-size">+ Add size</button>
         <button class="btn primary" id="submit-btn">Upload &amp; process</button>
@@ -160,6 +163,21 @@ function setFile(f) {
   reader.onload = () => { originalDataUrl = reader.result; document.getElementById('dz-preview').src = originalDataUrl; };
   reader.readAsDataURL(f);
 }
+
+// "Start over": clears the uploaded image and resets output sizes back to defaults.
+// Leaves the compare grid and history below untouched — previously generated
+// results stay visible.
+document.getElementById('start-over').addEventListener('click', () => {
+  file = null;
+  originalDataUrl = null;
+  fileInput.value = '';
+  document.getElementById('dz-empty').style.display = '';
+  document.getElementById('dz-filled').style.display = 'none';
+  document.getElementById('dz-preview').src = '';
+  document.getElementById('dz-fname').textContent = '';
+  sizes = [defaultSize({ width: 800, height: 600, mode: 'cover', _id: seq++ }), defaultSize({ width: 500, height: 500, mode: 'crop', _id: seq++ })];
+  renderSizeRows();
+});
 
 document.getElementById('submit-btn').addEventListener('click', async () => {
   const errBox = document.getElementById('error-box');

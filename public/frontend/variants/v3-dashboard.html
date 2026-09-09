@@ -11,6 +11,24 @@
   .col-left { flex: 1.1; min-width: 0; }
   .col-right { flex: 1; min-width: 0; }
 
+  .preset-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .preset-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 6px 12px 6px 10px;
+    font-size: 12.5px;
+    cursor: pointer;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .preset-chip:hover { border-color: var(--accent); color: var(--accent); }
+  .preset-chip .pc-dims { color: var(--text-dim); font-size: 11px; }
+  .preset-chip:hover .pc-dims { color: var(--accent); }
+
   h1 { font-size: 18px; margin: 0 0 2px; }
   .sub { color: var(--text-dim); font-size: 13px; margin: 0 0 18px; }
 
@@ -70,9 +88,37 @@
   .out-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
   .out-card img { width: 100%; display: block; aspect-ratio: 1; object-fit: contain; background: var(--surface-2); border-radius: 6px; }
   .out-meta { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+
+  .dl-batch-btn {
+    margin-left: auto;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 10.5px;
+    color: var(--text-dim);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .dl-batch-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .dl-batch-btn:disabled { opacity: .4; cursor: default; }
   .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .size-error { font-size: 11px; color: var(--danger); margin-top: 6px; }
+
+  /* --- Responsive --- */
+  @media (max-width: 860px) {
+    .wrap { flex-direction: column; padding: 18px 14px 50px; gap: 26px; }
+    .col-left, .col-right { flex: none; width: 100%; }
+  }
+  @media (max-width: 480px) {
+    .wrap { padding: 14px 10px 40px; }
+    h1 { font-size: 16px; }
+    .dropzone { padding: 20px 14px; }
+    .card-grid { grid-template-columns: 1fr; }
+    .out-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+    .preset-chip { font-size: 12px; padding: 5px 10px 5px 9px; }
+  }
 </style>
 </head>
 <body>
@@ -91,7 +137,13 @@
       </div>
       <input type="file" id="file-input" accept="image/*" style="display:none" />
 
-      <div class="section-title">Output sizes</div>
+      <div class="section-title">Quick presets</div>
+      <div class="preset-row" id="preset-row"></div>
+
+      <div class="section-title">
+        Output sizes
+        <button id="start-over" title="Clear the uploaded image and all sizes back to defaults (keeps request history)">start over</button>
+      </div>
       <div class="card-grid" id="card-grid"></div>
 
       <div id="error-box"></div>
@@ -101,7 +153,10 @@
     <div class="col-right">
       <div class="section-title">
         Request history
-        <button id="clear-history">clear</button>
+        <span style="display:flex;gap:12px;align-items:center;font-weight:400;text-transform:none">
+          <button id="download-all-history" title="Download every generated image across all requests below">download all</button>
+          <button id="clear-history">clear</button>
+        </span>
       </div>
       <div id="history"></div>
     </div>
@@ -118,6 +173,72 @@ initLightbox();
 let file = null;
 let sizes = [defaultSize({ width: 800, height: 600, mode: 'cover', _id: 0 }), defaultSize({ width: 1600, height: 900, mode: 'contain', _id: 1 })];
 let seq = 2;
+
+// Latest known output images per request id (each submit == one batch, e.g. image A
+// vs image B run separately). Kept up to date as each batch's polling resolves, so
+// "download all" (either per-batch or across every batch) always grabs the newest set.
+let historyImages = {};
+
+function imgFilename(img, prefix) {
+  const ext = (img.format || 'img').toLowerCase();
+  return `${prefix}_${img.width}x${img.height}-${img.mode}.${ext}`;
+}
+
+/** Downloads a list of { url, filename } one at a time (staggered) so the browser
+ * doesn't block a burst of simultaneous downloads. */
+async function downloadFiles(files) {
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    try {
+      const resp = await fetch(f.url);
+      const blob = await resp.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = f.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objUrl);
+    } catch (e) {
+      console.error(`Download failed for ${f.url}`, e);
+    }
+    if (i < files.length - 1) await new Promise(r => setTimeout(r, 200));
+  }
+}
+
+// Common output shapes — clicking one just adds a pre-filled card, same as "+ Add size"
+// but with sensible dimensions/mode/quality already set. You can still tweak it after.
+const PRESETS = [
+  { icon: '🔳', name: 'Thumbnail', width: 150, height: 150, mode: 'crop', quality: 80 },
+  { icon: '🙂', name: 'Avatar', width: 400, height: 400, mode: 'crop', quality: 85 },
+  { icon: '🖼️', name: 'Social post', width: 1200, height: 630, mode: 'cover', quality: 82 },
+  { icon: '🗂️', name: 'Card preview', width: 600, height: 400, mode: 'contain', quality: 80 },
+  { icon: '⬛', name: 'Square', width: 1080, height: 1080, mode: 'contain', quality: 85 },
+  { icon: '📺', name: 'HD', width: 1280, height: 720, mode: 'cover', quality: 80 },
+  { icon: '🎬', name: 'Full HD', width: 1920, height: 1080, mode: 'cover', quality: 80 },
+  { icon: '🎞️', name: '4K', width: 3840, height: 2160, mode: 'cover', quality: 75 },
+  { icon: '📱', name: 'Mobile', width: 375, height: 667, mode: 'cover', quality: 80 },
+  { icon: '📖', name: 'Story', width: 1080, height: 1920, mode: 'cover', quality: 82 },
+  { icon: '📧', name: 'Email header', width: 600, height: 200, mode: 'cover', quality: 80 },
+  { icon: '🌄', name: 'Hero banner', width: 2560, height: 1440, mode: 'cover', quality: 78 },
+];
+
+function renderPresets() {
+  document.getElementById('preset-row').innerHTML = PRESETS.map((p, i) => `
+    <button type="button" class="preset-chip" data-preset="${i}" title="Add a ${p.width}×${p.height} ${p.mode} size card">
+      <span>${p.icon}</span><span>${p.name}</span><span class="pc-dims">${p.width}×${p.height}</span>
+    </button>
+  `).join('');
+  document.querySelectorAll('#preset-row [data-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = PRESETS[Number(btn.dataset.preset)];
+      sizes.push(defaultSize({ width: p.width, height: p.height, mode: p.mode, quality: p.quality, _id: seq++ }));
+      renderCards();
+    });
+  });
+}
+renderPresets();
 
 function renderCards() {
   const grid = document.getElementById('card-grid');
@@ -184,6 +305,20 @@ function setFile(f) {
   reader.readAsDataURL(f);
 }
 
+// "Start over": clears the uploaded image and resets output sizes back to defaults.
+// Does NOT touch localStorage history or the request history panel — previously
+// generated requests stay visible.
+document.getElementById('start-over').addEventListener('click', () => {
+  file = null;
+  fileInput.value = '';
+  document.getElementById('dz-empty').style.display = '';
+  document.getElementById('dz-filled').style.display = 'none';
+  document.getElementById('dz-preview').src = '';
+  document.getElementById('dz-fname').textContent = '';
+  sizes = [defaultSize({ width: 800, height: 600, mode: 'cover', _id: seq++ }), defaultSize({ width: 1600, height: 900, mode: 'contain', _id: seq++ })];
+  renderCards();
+});
+
 document.getElementById('submit-btn').addEventListener('click', async () => {
   const errBox = document.getElementById('error-box');
   errBox.innerHTML = '';
@@ -226,6 +361,7 @@ function buildReqCardEl(id, sizes) {
       <span class="spinner"></span>
       <span class="badge pending">pending</span>
       <span class="req-id">#${id} · ${sizes.length} size${sizes.length === 1 ? '' : 's'}</span>
+      <button type="button" class="dl-batch-btn" disabled title="Download all outputs from this request">&#8681; all</button>
     </div>
     <div class="out-grid"></div>
   `;
@@ -234,12 +370,17 @@ function buildReqCardEl(id, sizes) {
 
 function updateReqCard(card, detail) {
   const done = ['completed', 'partially_completed', 'failed', 'expired'].includes(detail.status);
+  const images = detail.images || [];
+  historyImages[detail.id] = images;
   card.querySelector('.head').innerHTML = `
     ${done ? '' : '<span class="spinner"></span>'}
     <span class="badge ${detail.status}">${statusLabel(detail.status)}</span>
     <span class="req-id">#${detail.id}${detail.source_image ? ` · ${detail.source_image.width}×${detail.source_image.height} src` : ''}</span>
+    <button type="button" class="dl-batch-btn" ${images.length ? '' : 'disabled'} title="Download all outputs from this request">&#8681; all</button>
   `;
-  const images = detail.images || [];
+  card.querySelector('.dl-batch-btn').addEventListener('click', () => {
+    downloadFiles(images.map(img => ({ url: img.url, filename: imgFilename(img, `request-${detail.id}`) })));
+  });
   const outGrid = card.querySelector('.out-grid');
   outGrid.innerHTML = images.map((img, i) => `
     <div class="out-card">
@@ -271,7 +412,19 @@ function prependHistoryCard(id, sizes) {
 
 document.getElementById('clear-history').addEventListener('click', () => {
   localStorage.removeItem('image-resizer:history');
+  historyImages = {};
   document.getElementById('history').innerHTML = '<div class="history-empty">No requests yet — submit one to see it here.</div>';
+});
+
+// Downloads every generated image across every batch currently in the history list
+// (e.g. image A's run and image B's run both get pulled in), each named with its
+// own request id so files from different batches never collide.
+document.getElementById('download-all-history').addEventListener('click', () => {
+  const files = Object.entries(historyImages).flatMap(([id, imgs]) =>
+    imgs.map(img => ({ url: img.url, filename: imgFilename(img, `request-${id}`) }))
+  );
+  if (!files.length) return;
+  downloadFiles(files);
 });
 
 renderHistoryFromStorage();

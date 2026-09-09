@@ -139,7 +139,10 @@
       </div>
 
       <div>
-        <div class="section-title">Source image</div>
+        <div class="section-title">
+          <span>Source image</span>
+          <button type="button" id="start-over" title="Clear the uploaded image and all sizes back to defaults (keeps your request history)" style="border:none;background:none;color:var(--text-dim);cursor:pointer;text-decoration:underline;font-size:11px;padding:0">start over</button>
+        </div>
         <div class="dropzone" id="dropzone" style="margin-top:8px">
           <div id="dz-empty">Click or drop an image here<br><span style="font-size:11px">JPEG · PNG · WebP · GIF · TIFF …</span></div>
           <div id="dz-filled" style="display:none">
@@ -303,6 +306,21 @@ function setFile(f) {
   reader.onload = () => document.getElementById('dz-preview').src = reader.result;
   reader.readAsDataURL(f);
 }
+
+// "Start over": clears the uploaded image and resets output sizes back to defaults,
+// like starting the form fresh. Does NOT touch the results panel on the right —
+// previously generated requests stay visible.
+document.getElementById('start-over').addEventListener('click', () => {
+  file = null;
+  fileInput.value = '';
+  document.getElementById('dz-empty').style.display = '';
+  document.getElementById('dz-filled').style.display = 'none';
+  document.getElementById('dz-preview').src = '';
+  document.getElementById('dz-fname').textContent = '';
+  rows = [newRow()];
+  rows.push(newRow({ width: 1600, height: 900, mode: 'contain' }));
+  renderRows();
+});
 
 // --- Submit ---
 document.getElementById('submit-btn').addEventListener('click', async () => {

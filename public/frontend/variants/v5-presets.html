@@ -103,7 +103,10 @@
     </div>
     <input type="file" id="file-input" accept="image/*" style="display:none" />
 
-    <div class="section-title">Choose one or more presets</div>
+    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Choose one or more presets</span>
+      <button type="button" id="start-over" title="Clear the uploaded image, presets and custom sizes back to default (keeps results below)" style="text-transform:none;font-weight:400;border:none;background:none;color:var(--text-dim);cursor:pointer;text-decoration:underline;font-size:11px;padding:0">start over</button>
+    </div>
     <div class="preset-grid" id="preset-grid"></div>
 
     <details id="advanced">
@@ -209,6 +212,23 @@ function setFile(f) {
   reader.onload = () => document.getElementById('dz-preview').src = reader.result;
   reader.readAsDataURL(f);
 }
+
+// "Start over": clears the uploaded image, preset selection and custom sizes back
+// to the default state. Leaves the results list below untouched — previously
+// generated requests stay visible.
+document.getElementById('start-over').addEventListener('click', () => {
+  file = null;
+  fileInput.value = '';
+  document.getElementById('dz-empty').style.display = '';
+  document.getElementById('dz-filled').style.display = 'none';
+  document.getElementById('dz-preview').src = '';
+  document.getElementById('dz-fname').textContent = '';
+  selected = new Set(['thumb', 'social']);
+  customSizes = [];
+  document.getElementById('advanced').open = false;
+  renderPresets();
+  renderAdvanced();
+});
 
 document.getElementById('submit-btn').addEventListener('click', async () => {
   const errBox = document.getElementById('error-box');
