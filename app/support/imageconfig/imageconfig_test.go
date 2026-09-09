@@ -13,8 +13,7 @@ import (
 	_ "goravel/tests"
 )
 
-func intPtr(v int) *int    { return &v }
-func boolPtr(v bool) *bool { return &v }
+func intPtr(v int) *int { return &v }
 
 func TestClampQuality(t *testing.T) {
 	cases := []struct {
@@ -38,14 +37,8 @@ func TestClampQuality(t *testing.T) {
 	}
 }
 
-func TestResolveUpscale(t *testing.T) {
-	if got := imageconfig.ResolveUpscale(nil); got != imageconfig.AllowUpscaleDefault() {
-		t.Errorf("ResolveUpscale(nil) = %v, want default %v", got, imageconfig.AllowUpscaleDefault())
-	}
-	if got := imageconfig.ResolveUpscale(boolPtr(true)); got != true {
-		t.Errorf("ResolveUpscale(true) = %v, want true", got)
-	}
-	if got := imageconfig.ResolveUpscale(boolPtr(false)); got != false {
-		t.Errorf("ResolveUpscale(false) = %v, want false", got)
+func TestAllowUpscaleDefault(t *testing.T) {
+	if got := imageconfig.AllowUpscaleDefault(); got != true {
+		t.Errorf("AllowUpscaleDefault() = %v, want true", got)
 	}
 }

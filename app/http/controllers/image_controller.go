@@ -73,12 +73,11 @@ func (c *ImageController) Store(ctx http.Context) http.Response {
 	}
 
 	rules := map[string]any{
-		"sizes":                 fmt.Sprintf("required|array|min:1|max:%d", imageconfig.MaxSizesPerRequest()),
-		"sizes.*.width":         fmt.Sprintf("required|integer|min:1|max:%d", maxWidth),
-		"sizes.*.height":        fmt.Sprintf("required|integer|min:1|max:%d", maxHeight),
-		"sizes.*.mode":          "string|in:contain,fit,cover,crop,fill",
-		"sizes.*.allow_upscale": "bool",
-		"sizes.*.quality":       fmt.Sprintf("integer|min:%d|max:%d", imageconfig.QualityMin(), imageconfig.QualityMax()),
+		"sizes":           fmt.Sprintf("required|array|min:1|max:%d", imageconfig.MaxSizesPerRequest()),
+		"sizes.*.width":   fmt.Sprintf("required|integer|min:1|max:%d", maxWidth),
+		"sizes.*.height":  fmt.Sprintf("required|integer|min:1|max:%d", maxHeight),
+		"sizes.*.mode":    "string|in:contain,fit,cover,crop,fill",
+		"sizes.*.quality": fmt.Sprintf("integer|min:%d|max:%d", imageconfig.QualityMin(), imageconfig.QualityMax()),
 	}
 
 	validator, err := facades.Validation().Make(ctx, parsed, rules)

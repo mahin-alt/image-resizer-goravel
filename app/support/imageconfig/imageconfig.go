@@ -13,8 +13,8 @@ import (
 )
 
 func DefaultQuality() int { return facades.Config().GetInt("image.default_quality", 80) }
-func QualityMin() int { return facades.Config().GetInt("image.quality_min", 0) }
-func QualityMax() int { return facades.Config().GetInt("image.quality_max", 100) }
+func QualityMin() int     { return facades.Config().GetInt("image.quality_min", 0) }
+func QualityMax() int     { return facades.Config().GetInt("image.quality_max", 100) }
 
 // ClampQuality resolves a possibly-nil client-supplied quality against the
 // configured default and [QualityMin, QualityMax] bounds.
@@ -40,15 +40,10 @@ func RetentionDuration() time.Duration {
 	return time.Duration(RetentionSeconds()) * time.Second
 }
 
-func AllowUpscaleDefault() bool { return facades.Config().GetBool("image.allow_upscale", false) }
-
-// ResolveUpscale resolves a possibly-nil per-size override against the global default.
-func ResolveUpscale(override *bool) bool {
-	if override != nil {
-		return *override
-	}
-	return AllowUpscaleDefault()
-}
+// AllowUpscaleDefault reports whether outputs may be enlarged beyond the
+// source image's dimensions. There is no per-request override - every
+// request uses this value (see ALLOW_UPSCALE in config/image.go).
+func AllowUpscaleDefault() bool { return facades.Config().GetBool("image.allow_upscale", true) }
 
 func MaxImageFileSize() int64 {
 	v := facades.Config().Get("image.max_image_file_size", int64(25*1024*1024))

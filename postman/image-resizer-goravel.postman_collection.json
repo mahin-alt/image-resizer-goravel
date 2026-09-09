@@ -30,14 +30,28 @@
 						"body": {
 							"mode": "formdata",
 							"formdata": [
-								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"contain\" }\n  ]\n}" },
-								{ "key": "image", "type": "file", "src": [] }
+								{
+									"key": "data",
+									"type": "text",
+									"value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"contain\" }\n  ]\n}"
+								},
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
 							]
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"images"
+							]
 						},
 						"description": "contain (alias: fit): shrinks the whole image to fit entirely inside 400x400, preserving aspect ratio. Nothing is cropped and nothing is stretched - the result may come out smaller than the box on one axis (e.g. 400x268 for a landscape photo). Poll with Get Image Request and check the output's actual width/height: at most one of them will be 400."
 					}
@@ -50,14 +64,28 @@
 						"body": {
 							"mode": "formdata",
 							"formdata": [
-								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"cover\" }\n  ]\n}" },
-								{ "key": "image", "type": "file", "src": [] }
+								{
+									"key": "data",
+									"type": "text",
+									"value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"cover\" }\n  ]\n}"
+								},
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
 							]
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"images"
+							]
 						},
 						"description": "cover: fills the 400x400 box exactly (both dimensions always come out 400x400), cropping away whatever overflows - but the crop is biased toward the image's most visually 'interesting' region (faces/detail get kept in frame) rather than a plain center crop. Compare the output visually against \"Crop\" below on an off-center subject to see the difference."
 					}
@@ -70,14 +98,28 @@
 						"body": {
 							"mode": "formdata",
 							"formdata": [
-								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"crop\" }\n  ]\n}" },
-								{ "key": "image", "type": "file", "src": [] }
+								{
+									"key": "data",
+									"type": "text",
+									"value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 400, \"mode\": \"crop\" }\n  ]\n}"
+								},
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
 							]
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"images"
+							]
 						},
 						"description": "crop: fills the 400x400 box exactly, same as cover, but the crop is always a plain fixed center crop - no saliency/face detection. Cheaper and more predictable than cover, but can cut off an off-center subject that cover would have kept in frame."
 					}
@@ -90,14 +132,28 @@
 						"body": {
 							"mode": "formdata",
 							"formdata": [
-								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 200, \"mode\": \"fill\" }\n  ]\n}" },
-								{ "key": "image", "type": "file", "src": [] }
+								{
+									"key": "data",
+									"type": "text",
+									"value": "{\n  \"sizes\": [\n    { \"width\": 400, \"height\": 200, \"mode\": \"fill\" }\n  ]\n}"
+								},
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
 							]
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"images"
+							]
 						},
 						"description": "fill: forces the image to exactly 400x200 regardless of its own aspect ratio. This is the ONLY mode that stretches/squashes the image - nothing is cropped, but circles become ellipses etc. Deliberately using a non-square 400x200 box here (rather than 400x400) makes the distortion obvious when you view the output."
 					}
@@ -106,66 +162,74 @@
 		},
 		{
 			"name": "Upscaling",
-			"description": "Same source image, sizes both smaller and larger than it - showing what allow_upscale actually controls.",
+			"description": "Same source image, sizes both smaller and larger than it - showing what ALLOW_UPSCALE (server-wide, no per-request override) controls.",
 			"item": [
 				{
-					"name": "Upscale disabled (default) - large sizes are capped at the source's own dimensions",
+					"name": "Upscale enabled (default) - large sizes actually enlarge",
 					"request": {
 						"method": "POST",
 						"header": [],
 						"body": {
 							"mode": "formdata",
 							"formdata": [
-								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100, \"mode\": \"contain\" },\n    { \"width\": 6000, \"height\": 6000, \"mode\": \"contain\" }\n  ]\n}" },
-								{ "key": "image", "type": "file", "src": [] }
+								{
+									"key": "data",
+									"type": "text",
+									"value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100, \"mode\": \"contain\" },\n    { \"width\": 6000, \"height\": 6000, \"mode\": \"contain\" }\n  ]\n}"
+								},
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
 							]
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"images"
+							]
 						},
-						"description": "allow_upscale is omitted here, so it falls back to the ALLOW_UPSCALE env default (false unless you changed it). The 100x100 size shrinks normally; the 6000x6000 size will NOT enlarge past the source image's own dimensions (check the response's \"source_image\" field vs the output's actual width/height - they'll be capped at the source's size, not 6000x6000)."
+						"description": "Upscaling follows the ALLOW_UPSCALE env default (true unless you changed it) - there is no per-request field for it. The 100x100 size shrinks normally; the 6000x6000 size will enlarge past the source image's own dimensions (check the response's \"source_image\" field vs the output's actual width/height). Set ALLOW_UPSCALE=false to see the 6000x6000 output capped at the source's size instead."
 					}
 				},
 				{
-					"name": "Upscale enabled per-size - large sizes actually enlarge",
+					"name": "Size matrix - tiny to huge (8 sizes)",
 					"request": {
 						"method": "POST",
 						"header": [],
 						"body": {
 							"mode": "formdata",
 							"formdata": [
-								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 6000, \"height\": 6000, \"mode\": \"contain\", \"allow_upscale\": true }\n  ]\n}" },
-								{ "key": "image", "type": "file", "src": [] }
+								{
+									"key": "data",
+									"type": "text",
+									"value": "{\n  \"sizes\": [\n    { \"width\": 10, \"height\": 10, \"mode\": \"contain\" },\n    { \"width\": 50, \"height\": 50, \"mode\": \"contain\" },\n    { \"width\": 150, \"height\": 150, \"mode\": \"contain\" },\n    { \"width\": 400, \"height\": 400, \"mode\": \"contain\" },\n    { \"width\": 800, \"height\": 800, \"mode\": \"contain\" },\n    { \"width\": 1600, \"height\": 1600, \"mode\": \"contain\" },\n    { \"width\": 3200, \"height\": 3200, \"mode\": \"contain\" },\n    { \"width\": 6000, \"height\": 6000, \"mode\": \"contain\" }\n  ]\n}"
+								},
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
 							]
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
-						},
-						"description": "Same two sizes as above, but with \"allow_upscale\": true on each. This time the 6000x6000 output will actually be enlarged past the source's own dimensions (ordinary interpolation, not AI upscaling) - compare against the \"disabled\" request above."
-					}
-				},
-				{
-					"name": "Size matrix - tiny to huge (8 sizes, upscale forced on)",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 10, \"height\": 10, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 50, \"height\": 50, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 150, \"height\": 150, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 400, \"height\": 400, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 800, \"height\": 800, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 1600, \"height\": 1600, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 3200, \"height\": 3200, \"mode\": \"contain\", \"allow_upscale\": true },\n    { \"width\": 6000, \"height\": 6000, \"mode\": \"contain\", \"allow_upscale\": true }\n  ]\n}" },
-								{ "key": "image", "type": "file", "src": [] }
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"images"
 							]
 						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
-						},
-						"description": "The same uploaded image run through 8 sizes from 10x10 up to 6000x6000, all with allow_upscale forced to true. The small sizes exercise the downscale path; the sizes larger than the source image's own dimensions (check the response's \"source_image\" field) exercise the upscale path. All use \"contain\" so only pure scaling is being compared, no cropping/stretching."
+						"description": "The same uploaded image run through 8 sizes from 10x10 up to 6000x6000. The small sizes exercise the downscale path; the sizes larger than the source image's own dimensions (check the response's \"source_image\" field) exercise the upscale path (enabled by default via ALLOW_UPSCALE). All use \"contain\" so only pure scaling is being compared, no cropping/stretching."
 					}
 				}
 			]
@@ -182,14 +246,28 @@
 						"body": {
 							"mode": "formdata",
 							"formdata": [
-								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 500, \"height\": 500, \"mode\": \"cover\", \"quality\": 10 },\n    { \"width\": 500, \"height\": 500, \"mode\": \"cover\" },\n    { \"width\": 500, \"height\": 500, \"mode\": \"cover\", \"quality\": 100 }\n  ]\n}" },
-								{ "key": "image", "type": "file", "src": [] }
+								{
+									"key": "data",
+									"type": "text",
+									"value": "{\n  \"sizes\": [\n    { \"width\": 500, \"height\": 500, \"mode\": \"cover\", \"quality\": 10 },\n    { \"width\": 500, \"height\": 500, \"mode\": \"cover\" },\n    { \"width\": 500, \"height\": 500, \"mode\": \"cover\", \"quality\": 100 }\n  ]\n}"
+								},
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
 							]
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"images"
+							]
 						},
 						"description": "Three identical 500x500 cover crops, differing only in WebP quality: 10 (visibly blocky, smallest file), the server default (IMAGE_DEFAULT_QUALITY, currently 80), and 100 (best fidelity, largest file). 0 and 100 are libvips' actual supported floor/ceiling (see IMAGE_QUALITY_MIN/MAX in .env.example) - quality is a pure encode-fidelity/filesize tradeoff, it never changes pixel dimensions. Poll and compare each output's file_size."
 					}
@@ -207,13 +285,23 @@
 						"body": {
 							"mode": "formdata",
 							"formdata": [
-								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100 }\n  ]\n}" }
+								{
+									"key": "data",
+									"type": "text",
+									"value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100 }\n  ]\n}"
+								}
 							]
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"images"
+							]
 						},
 						"description": "No \"image\" field at all. Expected: 422 with { \"errors\": { \"image\": [...] } }."
 					}
@@ -226,13 +314,23 @@
 						"body": {
 							"mode": "formdata",
 							"formdata": [
-								{ "key": "image", "type": "file", "src": [] }
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
 							]
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"images"
+							]
 						},
 						"description": "A file is attached but there's no \"data\" field. Expected: 422 with { \"errors\": { \"data\": [...] } }. Pick any local file for \"image\" before sending."
 					}
@@ -245,14 +343,28 @@
 						"body": {
 							"mode": "formdata",
 							"formdata": [
-								{ "key": "data", "type": "text", "value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100, \"mode\": \"stretch-to-infinity\" }\n  ]\n}" },
-								{ "key": "image", "type": "file", "src": [] }
+								{
+									"key": "data",
+									"type": "text",
+									"value": "{\n  \"sizes\": [\n    { \"width\": 100, \"height\": 100, \"mode\": \"stretch-to-infinity\" }\n  ]\n}"
+								},
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
 							]
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/images",
-							"host": [ "{{base_url}}" ],
-							"path": [ "api", "v1", "images" ]
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"images"
+							]
 						},
 						"description": "\"mode\" isn't one of contain/fit/cover/crop/fill. Expected: 422 with { \"errors\": { \"sizes.0.mode\": [...] } }."
 					}
@@ -266,8 +378,15 @@
 				"header": [],
 				"url": {
 					"raw": "{{base_url}}/api/v1/images/{{request_id}}",
-					"host": [ "{{base_url}}" ],
-					"path": [ "api", "v1", "images", "{{request_id}}" ]
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"images",
+						"{{request_id}}"
+					]
 				},
 				"description": "Poll this until status is \"completed\" or \"partially_completed\". Each entry in \"images\" has a \"url\" (opens/renders inline in a browser) and a \"download_url\" (forces a browser download via Content-Disposition: attachment) for the generated WebP. Update the request_id collection variable to the id returned by whichever Create request you just ran."
 			}
