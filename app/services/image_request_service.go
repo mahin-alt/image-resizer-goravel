@@ -48,7 +48,7 @@ func CreateImageProcessingRequest(file filesystem.File, sizes []requests.Request
 				Width:                    s.Width,
 				Height:                   s.Height,
 				Mode:                     mode,
-				AllowUpscale:             imageconfig.ResolveUpscale(s.AllowUpscale),
+				AllowUpscale:             imageconfig.AllowUpscaleDefault(),
 				Quality:                  imageconfig.ClampQuality(s.Quality),
 				Status:                   models.SizeStatusPending,
 			}

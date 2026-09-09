@@ -7,9 +7,8 @@ type CreateImageRequestBody struct {
 }
 
 type RequestedSize struct {
-	Width        int    `json:"width" form:"width"`
-	Height       int    `json:"height" form:"height"`
-	Mode         string `json:"mode" form:"mode"`
-	AllowUpscale *bool  `json:"allow_upscale" form:"allow_upscale"`
-	Quality      *int   `json:"quality" form:"quality"`
+	Width   int    `json:"width" form:"width"`
+	Height  int    `json:"height" form:"height"`
+	Mode    string `json:"mode" form:"mode"`
+	Quality *int   `json:"quality" form:"quality"`
 }

@@ -31,8 +31,9 @@ func init() {
 		"retention_seconds": config.Env("IMAGE_RETENTION_SECONDS", 86400),
 
 		// Whether outputs may be enlarged beyond the source image's
-		// dimensions by default. A request can override this per size.
-		"allow_upscale": config.Env("ALLOW_UPSCALE", false),
+		// dimensions. Applied to every request - there is no per-request
+		// override (see app/support/imageconfig.AllowUpscaleDefault()).
+		"allow_upscale": config.Env("ALLOW_UPSCALE", true),
 
 		// Resource limits. All are enforced before/while processing.
 		// max_image_file_size also caps uploaded file size (see the

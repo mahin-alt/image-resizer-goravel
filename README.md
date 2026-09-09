@@ -78,12 +78,13 @@ Default mode when omitted: `contain`.
 
 ## Upscaling
 
-`ALLOW_UPSCALE` sets the server-wide default (`false` unless changed). Each
-requested size may include `"allow_upscale": true|false` to override it for
-that size only. When upscaling is disabled, `contain`/`cover`/`crop` use
-libvips' `SizeDown` (never enlarge); `fill` clamps the requested box to the
-source's own dimensions per axis before force-resizing, so it still won't
-enlarge beyond the source even though it stretches.
+`ALLOW_UPSCALE` sets whether outputs may be enlarged beyond the source
+image's dimensions (`true` unless changed). It applies to every request -
+there is no per-request override. When upscaling is disabled,
+`contain`/`cover`/`crop` use libvips' `SizeDown` (never enlarge); `fill`
+clamps the requested box to the source's own dimensions per axis before
+force-resizing, so it still won't enlarge beyond the source even though it
+stretches.
 
 ## Animated sources
 
@@ -123,7 +124,7 @@ holding `{ "sizes": [...] }` as a JSON string:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/images \
-  -F 'data={"sizes":[{"width":400,"height":400,"mode":"cover"},{"width":800,"height":600},{"width":1200,"height":900,"allow_upscale":true,"quality":90}]}' \
+  -F 'data={"sizes":[{"width":400,"height":400,"mode":"cover"},{"width":800,"height":600},{"width":1200,"height":900,"quality":90}]}' \
   -F 'image=@photo.jpg'
 ```
 
@@ -211,7 +212,7 @@ variables directly. See `.env.example` for the full list with comments.
 |---|---|
 | `IMAGE_DEFAULT_QUALITY`, `IMAGE_QUALITY_MIN`, `IMAGE_QUALITY_MAX` | WebP quality default and client-override bounds |
 | `IMAGE_RETENTION_SECONDS` | Output lifetime in seconds, applied at creation time |
-| `ALLOW_UPSCALE` | Global upscale default (overridable per size) |
+| `ALLOW_UPSCALE` | Whether outputs may be enlarged beyond the source (applies to every request) |
 | `MAX_IMAGE_FILE_SIZE` | Uploaded source file size cap |
 | `MAX_IMAGE_WIDTH`, `MAX_IMAGE_HEIGHT` | Source dimension caps |
 | `MAX_TOTAL_OUTPUT_PIXELS` | Per-requested-size pixel cap (decompression-bomb guard) |
