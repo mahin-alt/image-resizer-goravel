@@ -16,5 +16,6 @@ func Migrations() []schema.Migration {
 		&migrations.M20260902000001AddInputTypeToImageProcessingRequestsTable{},
 		&migrations.M20260902000002MakeExpiresAtNullableOnImageOutputsTable{},
 		&migrations.M20260903000001AddOutputHashToImageProcessingRequestsTable{},
+		&migrations.M20260923000001AddLastHeartbeatAtToImageProcessingRequestsTable{},
 	}
 }
