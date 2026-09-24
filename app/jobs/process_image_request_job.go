@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"goravel/app/facades"
@@ -80,11 +81,21 @@ func (r *ProcessImageRequestJob) Handle(args ...any) error {
 
 	startedAt := carbon.NewDateTime(carbon.Now())
 	if err := updateRequest(request.ID, map[string]any{
-		"status":     models.RequestStatusProcessing,
-		"started_at": startedAt,
+		"status":            models.RequestStatusProcessing,
+		"started_at":        startedAt,
+		"last_heartbeat_at": startedAt,
 	}); err != nil {
 		return fmt.Errorf("mark request processing: %w", err)
 	}
+
+	// Keep proving to services.SweepStaleProcessingRequests that this
+	// request's worker is still alive for as long as Handle is doing real
+	// work below. If the process dies (crash, forced shutdown) the ticks
+	// simply stop, the heartbeat goes stale, and the sweep reclaims it -
+	// there's no error path to hook that case into since nothing here gets
+	// to run when the process itself disappears.
+	stopHeartbeat := r.startHeartbeat(request.ID)
+	defer stopHeartbeat()
 
 	var sizes []models.ImageProcessingRequestSize
 	if err := facades.Orm().Query().Where("image_processing_request_id", request.ID).Find(&sizes); err != nil {
@@ -184,6 +195,35 @@ func (r *ProcessImageRequestJob) Handle(args ...any) error {
 		"status":       finalStatus,
 		"completed_at": carbon.NewDateTime(carbon.Now()),
 	})
+}
+
+// startHeartbeat launches a goroutine that refreshes requestID's
+// last_heartbeat_at every imageconfig.HeartbeatInterval() until the returned
+// stop func is called. The caller must defer stop() so the goroutine is
+// always cleaned up, including on early-return error paths.
+func (r *ProcessImageRequestJob) startHeartbeat(requestID uint) (stop func()) {
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(imageconfig.HeartbeatInterval())
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				_ = updateRequest(requestID, map[string]any{"last_heartbeat_at": carbon.NewDateTime(carbon.Now())})
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	return func() {
+		close(done)
+		wg.Wait()
+	}
 }
 
 // resolveSource gets a local filesystem path to the uploaded source image,

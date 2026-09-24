@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/goravel/framework/contracts/http"
@@ -131,6 +132,31 @@ func (c *ImageController) Show(ctx http.Context) http.Response {
 	_ = facades.Orm().Query().Where("image_processing_request_id", request.ID).Find(&outputs)
 
 	return ctx.Response().Success().Json(resources.RequestDetail(&request, sizes, outputs))
+}
+
+// Retry handles POST /api/v1/images/{id}/retry. Only requests currently
+// "failed" or "partially_completed" can be retried - see
+// services.RetryImageProcessingRequest.
+func (c *ImageController) Retry(ctx http.Context) http.Response {
+	id := ctx.Request().RouteInt("id")
+	if id <= 0 {
+		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
+	}
+
+	request, err := services.RetryImageProcessingRequest(uint(id))
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrRequestNotFound):
+			return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
+		case errors.Is(err, services.ErrRequestNotRetryable):
+			return ctx.Response().Status(http.StatusConflict).Json(http.Json{"error": err.Error()})
+		default:
+			facades.Log().With(map[string]any{"error": err.Error()}).Error("failed to retry image processing request")
+			return ctx.Response().Status(http.StatusInternalServerError).Json(http.Json{"error": "failed to retry processing request"})
+		}
+	}
+
+	return ctx.Response().Status(http.StatusAccepted).Json(resources.RequestAccepted(request))
 }
 
 // firstDuplicateSize returns "{width}x{height}" for the first width/height

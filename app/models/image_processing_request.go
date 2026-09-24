@@ -47,6 +47,12 @@ type ImageProcessingRequest struct {
 	ErrorMessage   *string          `gorm:"column:error_message;type:text" json:"error_message,omitempty"`
 	StartedAt      *carbon.DateTime `gorm:"column:started_at" json:"started_at,omitempty"`
 	CompletedAt    *carbon.DateTime `gorm:"column:completed_at" json:"completed_at,omitempty"`
+	// LastHeartbeatAt is refreshed periodically by the worker while it's
+	// actively processing this request (see
+	// ProcessImageRequestJob.startHeartbeat). A "processing" request whose
+	// heartbeat has gone stale means the worker that owned it died without
+	// finishing - see services.SweepStaleProcessingRequests.
+	LastHeartbeatAt *carbon.DateTime `gorm:"column:last_heartbeat_at" json:"-"`
 	// SourceWidth/SourceHeight are the source image's own dimensions, filled
 	// in once the worker has loaded/inspected it - nil while status is
 	// still pending/processing, or if the request failed before that point

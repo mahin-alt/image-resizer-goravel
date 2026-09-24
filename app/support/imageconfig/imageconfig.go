@@ -79,6 +79,19 @@ func CleanupQueue() string {
 	return facades.Config().GetString("image.cleanup_queue", "image_cleanup")
 }
 
+// HeartbeatInterval is how often an in-progress ProcessImageRequestJob
+// refreshes its request's last_heartbeat_at.
+func HeartbeatInterval() time.Duration {
+	return time.Duration(facades.Config().GetInt("image.heartbeat_interval_seconds", 15)) * time.Second
+}
+
+// StaleProcessingTimeout is how long a "processing" request can go without
+// a heartbeat before it's considered abandoned by its worker - see
+// services.SweepStaleProcessingRequests.
+func StaleProcessingTimeout() time.Duration {
+	return time.Duration(facades.Config().GetInt("image.stale_processing_timeout_seconds", 120)) * time.Second
+}
+
 func toInt64(v any) int64 {
 	switch n := v.(type) {
 	case int64:

@@ -59,5 +59,18 @@ func init() {
 		// Queues.
 		"processing_queue": config.Env("PROCESSING_QUEUE", "image_processing"),
 		"cleanup_queue":    config.Env("CLEANUP_QUEUE", "image_cleanup"),
+
+		// Stale processing recovery. A worker that dies mid-job (crash,
+		// forced shutdown) leaves its request stuck at status "processing"
+		// forever with nothing to notice - see the "stale request recovery"
+		// plan section. HeartbeatIntervalSeconds is how often an
+		// in-progress job pings last_heartbeat_at; StaleProcessingTimeoutSeconds
+		// is how long a "processing" request can go without a heartbeat
+		// before the sweep (services.SweepStaleProcessingRequests) gives up
+		// on it and marks it failed. Keep the timeout comfortably larger
+		// than the interval (default is 8x) so one missed tick under load
+		// doesn't cause a false positive.
+		"heartbeat_interval_seconds":       config.Env("HEARTBEAT_INTERVAL_SECONDS", 15),
+		"stale_processing_timeout_seconds": config.Env("STALE_PROCESSING_TIMEOUT_SECONDS", 120),
 	})
 }
