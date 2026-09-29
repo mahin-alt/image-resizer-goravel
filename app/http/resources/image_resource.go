@@ -15,18 +15,6 @@ import (
 	"goravel/app/storage"
 )
 
-type RequestAcceptedResponse struct {
-	Status string `json:"status"`
-	ID     uint   `json:"id"`
-}
-
-func RequestAccepted(r *models.ImageProcessingRequest) *RequestAcceptedResponse {
-	return &RequestAcceptedResponse{
-		Status: r.Status,
-		ID:     r.ID,
-	}
-}
-
 type ImageOutputResponse struct {
 	URL      string `json:"url"`
 	Width    int    `json:"width"`

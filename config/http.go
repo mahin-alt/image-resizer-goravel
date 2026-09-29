@@ -33,21 +33,25 @@ func init() {
 		// framework version). It must be at least as large as the longest
 		// any single request is allowed to legitimately take.
 		//
-		// That's now GET /images/{id}/wait (a long-poll - see
-		// ImageController.Wait), which deliberately blocks for up to
-		// image.status_wait_seconds (see config/image.go) before
-		// responding - this must stay comfortably larger than that, or the
-		// framework force-cancels the request out from under the handler
-		// before it gets to respond on its own. IMPORTANT: this middleware
+		// That's now POST /images and POST /images/{id}/retry: both process
+		// every requested size synchronously, inline in the handler (see
+		// ImageController.Store, services.ProcessImageRequestSync), and
+		// don't respond until that finishes - however long it takes for
+		// however many sizes were requested. IMPORTANT: this middleware
 		// also fully buffers every response and only releases it to the
-		// client once the handler returns OR this deadline fires (in which
-		// case the buffered response is discarded, not delivered) - so
-		// this value being large is not "extra safety margin" the way it
-		// would be for a normal request timeout, it's load-bearing for
-		// Wait to ever respond at all. Every other endpoint here finishes
-		// in milliseconds, so this value being large doesn't weaken
-		// anything for them in practice.
-		"request_timeout": config.Env("HTTP_REQUEST_TIMEOUT", 35),
+		// client once the handler returns OR this deadline fires - if the
+		// deadline fires first, the buffered response (the finished
+		// result, however much processing succeeded) is silently
+		// discarded, not delivered, even though the request row itself
+		// still gets its final status recorded (the handler keeps running
+		// in its own goroutine past that point - see
+		// services.SweepStaleProcessingRequests). So this value isn't
+		// "extra safety margin", it's the actual ceiling on how long a
+		// client can wait for a real answer. Set generously (default 5
+		// minutes) since processing time can vary a lot with requested
+		// size/count and this app is meant to just wait it out - raise it
+		// further if you regularly submit many large sizes per request.
+		"request_timeout": config.Env("HTTP_REQUEST_TIMEOUT", 300),
 		// HTTPS Configuration
 		"tls": map[string]any{
 			// HTTPS Host

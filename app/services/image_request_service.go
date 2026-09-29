@@ -9,7 +9,6 @@ import (
 
 	"github.com/goravel/framework/contracts/database/orm"
 	"github.com/goravel/framework/contracts/filesystem"
-	"github.com/goravel/framework/contracts/queue"
 
 	"goravel/app/facades"
 	"goravel/app/http/requests"
@@ -17,7 +16,6 @@ import (
 	"goravel/app/models"
 	"goravel/app/storage"
 	"goravel/app/support/imageconfig"
-	"goravel/app/support/statusbus"
 )
 
 var (
@@ -31,14 +29,37 @@ var (
 	ErrRequestNotRetryable = errors.New("only failed or partially completed requests can be retried")
 )
 
+// processingSemaphore bounds how many requests this process runs through
+// ProcessImageRequestSync at once. Processing now happens inline in the
+// HTTP handler instead of a queue worker pool, so nothing else limits how
+// much concurrent libvips work a burst of uploads could otherwise spawn -
+// this is that limit, reusing the same MAX_CONCURRENT_IMAGE_JOBS setting
+// that used to size the queue worker's own concurrency.
+var processingSemaphore = make(chan struct{}, imageconfig.MaxConcurrentImageJobs())
+
+// ProcessImageRequestSync runs ProcessImageRequestJob.Handle for requestID
+// synchronously (rather than dispatching it to a queue), blocking the
+// caller until it finishes. A returned error means processing itself
+// failed for a reason worth logging (see ProcessImageRequestJob.Handle) -
+// it does NOT mean the caller should treat the HTTP request as failed: the
+// outcome (including "failed"/"partially_completed") is already durably
+// recorded on the request row, which is what callers should read back and
+// return to the client regardless of this return value.
+func ProcessImageRequestSync(requestID uint) error {
+	processingSemaphore <- struct{}{}
+	defer func() { <-processingSemaphore }()
+
+	return (&jobs.ProcessImageRequestJob{}).Handle(requestID)
+}
+
 // CreateImageProcessingRequest persists a pending ImageProcessingRequest
 // plus one ImageProcessingRequestSize per requested size, stores the
 // uploaded file onto the "images" disk under uploads/{request_id}/ (never
-// using the client-supplied filename), then dispatches the single
-// processing job for it (see the "one job per request" decision in the
-// architecture plan). It does not touch govips - that all happens in the
-// worker, which reads the file directly from where it's stored here and
-// deletes it once processing finishes.
+// using the client-supplied filename), then processes it synchronously
+// before returning - the caller re-reads the request's final state (see
+// controllers.loadRequestDetail) rather than trusting anything on the
+// struct returned here, since this function's own copy is never updated
+// past the initial insert.
 func CreateImageProcessingRequest(file filesystem.File, sizes []requests.RequestedSize) (*models.ImageProcessingRequest, error) {
 	request := &models.ImageProcessingRequest{
 		InputType: models.InputTypeUpload,
@@ -88,19 +109,22 @@ func CreateImageProcessingRequest(file filesystem.File, sizes []requests.Request
 	}
 	request.SourceFilePath = &storedPath
 
-	if err := facades.Queue().
-		Job(&jobs.ProcessImageRequestJob{}, []queue.Arg{{Type: "uint", Value: request.ID}}).
-		OnQueue(imageconfig.ProcessingQueue()).
-		Dispatch(); err != nil {
-		return nil, fmt.Errorf("dispatch processing job: %w", err)
+	if err := ProcessImageRequestSync(request.ID); err != nil {
+		// Already recorded on the request/size rows themselves (see
+		// ProcessImageRequestJob.fail and markSizeFailed) - the caller
+		// reads that back rather than treating this as an HTTP-level
+		// failure. Logged here purely for operator visibility.
+		facades.Log().With(map[string]any{"request_id": request.ID, "error": err.Error()}).
+			Warning("image processing finished with an error")
 	}
 
 	return request, nil
 }
 
 // RetryImageProcessingRequest resets a "failed" or "partially_completed"
-// request back to "pending" and re-dispatches ProcessImageRequestJob for
-// it. Only those two statuses are accepted (see ErrRequestNotRetryable) -
+// request back to "pending" and reprocesses it synchronously, the same way
+// CreateImageProcessingRequest does. Only those two statuses are accepted
+// (see ErrRequestNotRetryable) -
 // they're the ones where something actually failed; a "completed" request
 // has nothing to retry, and a "pending"/"processing" one is either already
 // queued or already being worked (or, if genuinely stuck, is
@@ -154,17 +178,13 @@ func RetryImageProcessingRequest(id uint) (*models.ImageProcessingRequest, error
 		return nil, err
 	}
 	request.Status = models.RequestStatusPending
-	// Wake any open GET /images/{id}/events stream still showing the old
-	// "failed"/"partially_completed" state (a client that had one open
-	// across the retry, rather than one freshly opened after this call
-	// returns - either way it should see "pending" promptly).
-	statusbus.Publish(request.ID)
 
-	if err := facades.Queue().
-		Job(&jobs.ProcessImageRequestJob{}, []queue.Arg{{Type: "uint", Value: request.ID}}).
-		OnQueue(imageconfig.ProcessingQueue()).
-		Dispatch(); err != nil {
-		return nil, fmt.Errorf("dispatch retry job: %w", err)
+	if err := ProcessImageRequestSync(request.ID); err != nil {
+		// Same reasoning as CreateImageProcessingRequest: the outcome is
+		// already on the row itself, this is purely for operator
+		// visibility.
+		facades.Log().With(map[string]any{"request_id": request.ID, "error": err.Error()}).
+			Warning("image processing finished with an error")
 	}
 
 	return &request, nil

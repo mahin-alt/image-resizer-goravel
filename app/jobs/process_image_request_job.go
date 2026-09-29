@@ -11,7 +11,6 @@ import (
 	"goravel/app/models"
 	"goravel/app/storage"
 	"goravel/app/support/imageconfig"
-	"goravel/app/support/statusbus"
 	"goravel/internal/imageprocessing"
 
 	"github.com/goravel/framework/support/carbon"
@@ -328,16 +327,6 @@ func updateRequest(id uint, values map[string]any) error {
 	_, err := facades.Orm().Query().Model(&models.ImageProcessingRequest{}).
 		Where("id", id).
 		Update(values)
-	if err == nil {
-		// Only status transitions matter to a GET /images/{id}/events
-		// subscriber (see resources.RequestDetail) - skip waking it for
-		// heartbeat-only ticks, which happen far more often and would
-		// otherwise cost a wasted DB re-read + SSE write per tick for
-		// nothing a client can see.
-		if _, ok := values["status"]; ok {
-			statusbus.Publish(id)
-		}
-	}
 	return err
 }
 

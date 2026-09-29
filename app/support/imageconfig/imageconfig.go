@@ -61,6 +61,11 @@ func MaxSizesPerRequest() int {
 	return facades.Config().GetInt("image.max_sizes_per_request", 10)
 }
 
+// MaxConcurrentImageJobs bounds how many requests
+// services.ProcessImageRequestSync runs through libvips at once,
+// process-wide - a burst of uploads no longer has a queue worker pool to
+// smooth it out (processing happens inline in the HTTP handler now), so
+// this is what keeps that burst from spawning unbounded concurrent work.
 func MaxConcurrentImageJobs() int {
 	return facades.Config().GetInt("image.max_concurrent_image_jobs", 4)
 }
@@ -69,10 +74,6 @@ func VipsConcurrency() int { return facades.Config().GetInt("image.vips_concurre
 
 func StoragePath() string {
 	return facades.Config().GetString("image.storage_path", "storage/app/images")
-}
-
-func ProcessingQueue() string {
-	return facades.Config().GetString("image.processing_queue", "image_processing")
 }
 
 func CleanupQueue() string {
@@ -90,18 +91,6 @@ func HeartbeatInterval() time.Duration {
 // services.SweepStaleProcessingRequests.
 func StaleProcessingTimeout() time.Duration {
 	return time.Duration(facades.Config().GetInt("image.stale_processing_timeout_seconds", 120)) * time.Second
-}
-
-// StatusWaitDuration is how long a single GET /images/{id}/wait call blocks
-// before giving up and returning the current status anyway.
-func StatusWaitDuration() time.Duration {
-	return time.Duration(facades.Config().GetInt("image.status_wait_seconds", 25)) * time.Second
-}
-
-// StatusWaitMaxConnections is the process-wide cap on concurrently blocked
-// GET /images/{id}/wait calls.
-func StatusWaitMaxConnections() int {
-	return facades.Config().GetInt("image.status_wait_max_connections", 500)
 }
 
 func toInt64(v any) int64 {
