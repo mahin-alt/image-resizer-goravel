@@ -17,6 +17,7 @@ import (
 	"goravel/app/models"
 	"goravel/app/storage"
 	"goravel/app/support/imageconfig"
+	"goravel/app/support/statusbus"
 )
 
 var (
@@ -153,6 +154,11 @@ func RetryImageProcessingRequest(id uint) (*models.ImageProcessingRequest, error
 		return nil, err
 	}
 	request.Status = models.RequestStatusPending
+	// Wake any open GET /images/{id}/events stream still showing the old
+	// "failed"/"partially_completed" state (a client that had one open
+	// across the retry, rather than one freshly opened after this call
+	// returns - either way it should see "pending" promptly).
+	statusbus.Publish(request.ID)
 
 	if err := facades.Queue().
 		Job(&jobs.ProcessImageRequestJob{}, []queue.Arg{{Type: "uint", Value: request.ID}}).

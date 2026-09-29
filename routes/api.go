@@ -16,6 +16,7 @@ func Api() {
 	facades.Route().Prefix("api/v1").Group(func(router route.Router) {
 		router.Post("images", imageController.Store)
 		router.Get("images/{id}", imageController.Show)
+		router.Get("images/{id}/wait", imageController.Wait)
 		router.Post("images/{id}/retry", imageController.Retry)
 	})
 }

@@ -92,6 +92,18 @@ func StaleProcessingTimeout() time.Duration {
 	return time.Duration(facades.Config().GetInt("image.stale_processing_timeout_seconds", 120)) * time.Second
 }
 
+// StatusWaitDuration is how long a single GET /images/{id}/wait call blocks
+// before giving up and returning the current status anyway.
+func StatusWaitDuration() time.Duration {
+	return time.Duration(facades.Config().GetInt("image.status_wait_seconds", 25)) * time.Second
+}
+
+// StatusWaitMaxConnections is the process-wide cap on concurrently blocked
+// GET /images/{id}/wait calls.
+func StatusWaitMaxConnections() int {
+	return facades.Config().GetInt("image.status_wait_max_connections", 500)
+}
+
 func toInt64(v any) int64 {
 	switch n := v.(type) {
 	case int64:

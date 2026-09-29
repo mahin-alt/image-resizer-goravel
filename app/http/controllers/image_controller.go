@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync/atomic"
+	"time"
 
 	"github.com/goravel/framework/contracts/http"
 
@@ -13,6 +15,7 @@ import (
 	"goravel/app/models"
 	"goravel/app/services"
 	"goravel/app/support/imageconfig"
+	"goravel/app/support/statusbus"
 	"goravel/internal/imageprocessing"
 )
 
@@ -120,9 +123,21 @@ func (c *ImageController) Show(ctx http.Context) http.Response {
 		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
 	}
 
+	detail, ok := loadRequestDetail(uint(id))
+	if !ok {
+		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
+	}
+
+	return ctx.Response().Success().Json(detail)
+}
+
+// loadRequestDetail loads and shapes one request's current state exactly as
+// Show returns it. Shared with Events below so both endpoints can never
+// drift in what they consider a request's state to be.
+func loadRequestDetail(id uint) (*resources.RequestDetailResponse, bool) {
 	var request models.ImageProcessingRequest
 	if err := facades.Orm().Query().Where("id", id).First(&request); err != nil || request.ID == 0 {
-		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
+		return nil, false
 	}
 
 	var sizes []models.ImageProcessingRequestSize
@@ -131,7 +146,93 @@ func (c *ImageController) Show(ctx http.Context) http.Response {
 	var outputs []models.ImageOutput
 	_ = facades.Orm().Query().Where("image_processing_request_id", request.ID).Find(&outputs)
 
-	return ctx.Response().Success().Json(resources.RequestDetail(&request, sizes, outputs))
+	return resources.RequestDetail(&request, sizes, outputs), true
+}
+
+// openWaitRequests bounds how many GET /images/{id}/wait calls this process
+// blocks on at once - see imageconfig.StatusWaitMaxConnections. Each one
+// holds a goroutine for up to imageconfig.StatusWaitDuration, so this cap is
+// what keeps a burst of clients from growing that unbounded.
+var openWaitRequests atomic.Int64
+
+// Wait handles GET /api/v1/images/{id}/wait: a long-poll that blocks until
+// this request's status changes, reaches a terminal status, or
+// imageconfig.StatusWaitDuration elapses - then returns the current detail
+// as a single, normal JSON response, exactly like Show. The frontend calls
+// this in a loop (see watchImageRequest) instead of polling Show on a fixed
+// timer: most calls block for a while and return the instant something
+// actually changes, so a client watching an in-progress request costs
+// roughly one request per status change rather than one per fixed interval.
+//
+// This is deliberately NOT a real streaming response (Server-Sent Events,
+// chunked push, etc.), even though that was tried first: Goravel's global
+// request-timeout middleware (gin-contrib/timeout, wired in via
+// goravel/gin's engine.Use(), which nothing in this app can opt a route out
+// of) swaps in a fully-buffered ResponseWriter for every request and only
+// copies it to the real connection once the handler returns. Anything
+// written incrementally during a long-held-open response sits in that
+// buffer, invisible to the client, until the connection ends anyway - which
+// defeats the entire point of a push stream. A long-poll (one request in,
+// one complete JSON response out, repeated by the client) has no such
+// problem: it already behaves exactly like every other endpoint here, one
+// full response written after the handler decides it's done.
+func (c *ImageController) Wait(ctx http.Context) http.Response {
+	id := ctx.Request().RouteInt("id")
+	if id <= 0 {
+		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
+	}
+	requestID := uint(id)
+
+	if openWaitRequests.Add(1) > int64(imageconfig.StatusWaitMaxConnections()) {
+		openWaitRequests.Add(-1)
+		// Rather than making this client queue behind a full budget of
+		// other long-polls, just answer immediately with whatever the
+		// current state is - the frontend's loop simply calls again.
+		detail, ok := loadRequestDetail(requestID)
+		if !ok {
+			return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
+		}
+		return ctx.Response().Success().Json(detail)
+	}
+	defer openWaitRequests.Add(-1)
+
+	// Subscribe before the first load, not after, so a status change that
+	// happens concurrently with it can never fall in a gap between "read
+	// current state" and "start listening for the next change" - it either
+	// lands in this very read, or it's already queued on `changed` by the
+	// time the select below runs.
+	changed, unsubscribe := statusbus.Subscribe(requestID)
+	defer unsubscribe()
+
+	detail, ok := loadRequestDetail(requestID)
+	if !ok {
+		return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
+	}
+	if models.IsTerminalStatus(detail.Status) {
+		return ctx.Response().Success().Json(detail)
+	}
+
+	timer := time.NewTimer(imageconfig.StatusWaitDuration())
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Request().Origin().Context().Done():
+		// The client gave up waiting (navigated away, tab/component
+		// closed) - nothing left to respond to, and nothing reads this
+		// response body anyway.
+		return ctx.Response().NoContent()
+	case <-timer.C:
+		// Nothing changed within the wait budget - hand back whatever the
+		// status still is (same as calling Show); the frontend's loop
+		// just calls again immediately.
+		return ctx.Response().Success().Json(detail)
+	case <-changed:
+		updated, ok := loadRequestDetail(requestID)
+		if !ok {
+			return ctx.Response().Status(http.StatusNotFound).Json(http.Json{"error": "not found"})
+		}
+		return ctx.Response().Success().Json(updated)
+	}
 }
 
 // Retry handles POST /api/v1/images/{id}/retry. Only requests currently

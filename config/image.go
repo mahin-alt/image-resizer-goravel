@@ -72,5 +72,25 @@ func init() {
 		// doesn't cause a false positive.
 		"heartbeat_interval_seconds":       config.Env("HEARTBEAT_INTERVAL_SECONDS", 15),
 		"stale_processing_timeout_seconds": config.Env("STALE_PROCESSING_TIMEOUT_SECONDS", 120),
+
+		// GET /api/v1/images/{id}/wait - a long-poll the frontend calls in a
+		// loop to be told about a request's status changes without polling
+		// on a fixed timer (see the long comment on ImageController.Wait
+		// for why this is a long-poll and not a real streaming response).
+		//   - status_wait_seconds: how long a single call blocks before
+		//     giving up and returning the current (possibly unchanged)
+		//     status anyway, if nothing changed sooner. Must stay
+		//     comfortably below http.request_timeout (config/http.go) - if
+		//     it didn't, the global request-timeout middleware would cut
+		//     the connection before this handler gets to respond on its
+		//     own, discarding the buffered response entirely (see that
+		//     file's comment on why that middleware buffers everything).
+		//   - status_wait_max_connections: process-wide cap on how many of
+		//     these calls this process blocks on at once. Once reached, a
+		//     new call gets an immediate answer instead of queuing behind
+		//     the existing ones - protects against unbounded goroutine
+		//     growth if far more clients call this than expected.
+		"status_wait_seconds":         config.Env("STATUS_WAIT_SECONDS", 25),
+		"status_wait_max_connections": config.Env("STATUS_WAIT_MAX_CONNECTIONS", 500),
 	})
 }

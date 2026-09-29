@@ -26,8 +26,28 @@ func init() {
 		"host": config.Env("APP_HOST", "127.0.0.1"),
 		// HTTP Port
 		"port": config.Env("APP_PORT", "3000"),
-		// HTTP Timeout, default is 3 seconds
-		"request_timeout": 3,
+		// HTTP Timeout. This is a single GLOBAL deadline the gin driver
+		// applies to every request (see github.com/goravel/gin route.go,
+		// "Timeout" in its global middleware list, wired in via
+		// engine.Use() - there's no per-route override for it in this
+		// framework version). It must be at least as large as the longest
+		// any single request is allowed to legitimately take.
+		//
+		// That's now GET /images/{id}/wait (a long-poll - see
+		// ImageController.Wait), which deliberately blocks for up to
+		// image.status_wait_seconds (see config/image.go) before
+		// responding - this must stay comfortably larger than that, or the
+		// framework force-cancels the request out from under the handler
+		// before it gets to respond on its own. IMPORTANT: this middleware
+		// also fully buffers every response and only releases it to the
+		// client once the handler returns OR this deadline fires (in which
+		// case the buffered response is discarded, not delivered) - so
+		// this value being large is not "extra safety margin" the way it
+		// would be for a normal request timeout, it's load-bearing for
+		// Wait to ever respond at all. Every other endpoint here finishes
+		// in milliseconds, so this value being large doesn't weaken
+		// anything for them in practice.
+		"request_timeout": config.Env("HTTP_REQUEST_TIMEOUT", 35),
 		// HTTPS Configuration
 		"tls": map[string]any{
 			// HTTPS Host
