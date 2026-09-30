@@ -1,7 +1,7 @@
 {
 	"info": {
 		"name": "image-resizer-goravel",
-		"description": "Self-hosted image processing API (Goravel + govips/libvips). Upload a source image file + requested sizes, poll for the generated WebP outputs. See README.md for full API/config docs. Every \"Create Image Request\" call needs a local file picked for the \"image\" field - click it in Postman and use Select Files before sending.",
+		"description": "Self-hosted image processing API (Goravel + govips/libvips). Upload a source image file + requested sizes; the request is synchronous - it blocks until every size has been processed and the response already contains the final generated WebP outputs, no polling needed. See README.md for full API/config docs. Every \"Create Image Request\" call needs a local file picked for the \"image\" field - click it in Postman and use Select Files before sending. Large/multiple sizes can take a while - that's expected, just wait for the response.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -14,7 +14,7 @@
 			"key": "request_id",
 			"value": "1",
 			"type": "string",
-			"description": "Set this to the \"id\" returned by a Create Image Request call, then use Get Image Request to poll it."
+			"description": "Set this to the \"id\" returned by a Create Image Request call, then use Get Image Request to look it back up later, or Retry Image Request if its status is \"failed\"/\"partially_completed\"."
 		}
 	],
 	"item": [
@@ -53,7 +53,7 @@
 								"images"
 							]
 						},
-						"description": "contain (alias: fit): shrinks the whole image to fit entirely inside 400x400, preserving aspect ratio. Nothing is cropped and nothing is stretched - the result may come out smaller than the box on one axis (e.g. 400x268 for a landscape photo). Poll with Get Image Request and check the output's actual width/height: at most one of them will be 400."
+						"description": "contain (alias: fit): shrinks the whole image to fit entirely inside 400x400, preserving aspect ratio. Nothing is cropped and nothing is stretched - the result may come out smaller than the box on one axis (e.g. 400x268 for a landscape photo). The response already contains the output's actual width/height directly - at most one of them will be 400."
 					}
 				},
 				{
@@ -269,7 +269,7 @@
 								"images"
 							]
 						},
-						"description": "Three identical 500x500 cover crops, differing only in WebP quality: 10 (visibly blocky, smallest file), the server default (IMAGE_DEFAULT_QUALITY, currently 80), and 100 (best fidelity, largest file). 0 and 100 are libvips' actual supported floor/ceiling (see IMAGE_QUALITY_MIN/MAX in .env.example) - quality is a pure encode-fidelity/filesize tradeoff, it never changes pixel dimensions. Poll and compare each output's file_size."
+						"description": "Three identical 500x500 cover crops, differing only in WebP quality: 10 (visibly blocky, smallest file), the server default (IMAGE_DEFAULT_QUALITY, currently 80), and 100 (best fidelity, largest file). 0 and 100 are libvips' actual supported floor/ceiling (see IMAGE_QUALITY_MIN/MAX in .env.example) - quality is a pure encode-fidelity/filesize tradeoff, it never changes pixel dimensions. Compare each output's file_size directly in the response."
 					}
 				}
 			]
@@ -388,7 +388,28 @@
 						"{{request_id}}"
 					]
 				},
-				"description": "Poll this until status is \"completed\" or \"partially_completed\". Each entry in \"images\" has a \"url\" (opens/renders inline in a browser) and a \"download_url\" (forces a browser download via Content-Disposition: attachment) for the generated WebP. Update the request_id collection variable to the id returned by whichever Create request you just ran."
+				"description": "Look up a previously submitted request by id (e.g. after closing Postman, or to check on one you don't have the original response for anymore) - Create Image Request and Retry Image Request already return this same shape directly, so you don't need to call this right after either of those. Each entry in \"images\" has a \"url\" for the generated WebP (opens/renders inline in a browser). Update the request_id collection variable to the id you want to look up."
+			}
+		},
+		{
+			"name": "Retry Image Request",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/v1/images/{{request_id}}/retry",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"images",
+						"{{request_id}}",
+						"retry"
+					]
+				},
+				"description": "Retries a \"failed\" or \"partially_completed\" request: resets it and reprocesses every requested size from the original uploaded image - no need to re-upload it. Synchronous, same as Create Image Request: blocks until reprocessing finishes and returns the final result directly (same shape as Get Image Request). Only \"failed\"/\"partially_completed\" requests are retryable - a \"completed\" or still-in-progress request gets 409 Conflict. Update the request_id collection variable to the id you want to retry."
 			}
 		}
 	]

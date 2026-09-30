@@ -2,127 +2,154 @@
 
 A self-hosted, headless image-processing API. It accepts a source image as a
 local file upload and a list of requested output sizes, processes the image
-locally with [govips](https://github.com/davidbyttow/govips)/[libvips](https://www.libvips.org/),
-converts every output to WebP, stores the files on the local filesystem (or
-S3-compatible storage), and returns JSON with URLs to the generated files.
-There is no GUI, no authentication, and no rate limiting.
+with [govips](https://github.com/davidbyttow/govips)/[libvips](https://www.libvips.org/),
+converts every output to WebP, uploads the generated files to S3-compatible
+object storage, and returns JSON with URLs to the generated files. There is
+no GUI, no authentication, and no rate limiting.
 
-Built on [Goravel](https://www.goravel.dev/) v1.18.
+Built on [Goravel](https://www.goravel.dev/) v1.18 (Go 1.25).
 
-This is the backend half of the [image-resizer-goravel](../) project. The
-Vue frontend lives in [`image-resizer-goravel-frontend`](../image-resizer-goravel-frontend)
-and talks to this API.
+This is the backend half of the `image-resizer-goravel` project. A Vue
+frontend project (`image-resizer-goravel-frontend`) is intended to talk to
+this API; a set of static HTML/JS demo frontends is also bundled under
+[`public/frontend`](public/frontend).
 
 ## Contents
 
+- [Tech stack](#tech-stack)
 - [Architecture](#architecture)
 - [Resize modes](#resize-modes)
-- [API](#api)
+- [API endpoints](#api-endpoints)
+- [Database schema](#database-schema)
 - [Getting started](#getting-started)
-  - [Option A: Docker (no Go required)](#option-a-docker-no-go-required)
-  - [Option B: native Go + libvips](#option-b-native-go--libvips)
-- [Configuration](#configuration)
-- [Tests](#tests)
-- [Deviations from a from-scratch design](#deviations-from-a-from-scratch-design)
+- [Environment variables](#environment-variables)
+- [Running tests](#running-tests)
+- [Deployment / Docker notes](#deployment--docker-notes)
+
+## Tech stack
+
+- **Language / framework:** Go 1.25, [Goravel](https://www.goravel.dev/) v1.18 (a Laravel-inspired Go framework)
+- **HTTP:** `goravel/gin` (Gin-based HTTP driver)
+- **Image processing:** `davidbyttow/govips` v2 bindings over libvips
+- **Database:** MySQL 8 by default (`goravel/mysql`); `goravel/postgres` is also wired up and selectable via `DB_CONNECTION`
+- **Object storage:** S3-compatible storage via `goravel/s3` (a locally patched fork in `third_party/goravel-s3`, needed for path-style endpoint support against MinIO); MinIO is used in local/dev via Docker Compose
+- **Queue:** Goravel's database-backed queue driver (`jobs`/`failed_jobs` tables) — used only for a still-registered but currently idle cleanup queue (see [Architecture](#architecture))
+- **AI facade:** `goravel/openai` is wired up as a facade (`app/facades/ai.go`, `config/ai.go`) but is not used by any current endpoint
+- **gRPC:** scaffolding exists (`config/grpc.go`, `routes/grpc.go`, `app/facades/grpc.go`) but no service is registered
+- **Testing:** Go's standard `testing` package + `stretchr/testify` (suites)
 
 ## Architecture
 
+Processing is **synchronous**: a client's `POST /api/v1/images` call blocks
+until every requested size has been generated (or failed) and the final
+result is returned directly in the same response. There is no
+pending/polling workflow for a fresh request.
+
 ```
 Client
-  -> POST /api/v1/images                 (app/http/controllers)
-  -> validate + persist request/sizes    (app/services)
-  -> dispatch ProcessImageRequestJob      (image_processing queue)
-  <- 202 { id, status: "pending" }
+  -> POST /api/v1/images                       (app/http/controllers)
+  -> validate + persist request/sizes           (app/services)
+  -> ProcessImageRequestSync (inline, in-request)
+       -> decode source once, autorotate, first-frame-only
+       -> for each requested size:
+            govips thumbnail (mode-specific)     (internal/imageprocessing)
+            -> strip metadata, encode WebP
+            -> upload to S3-compatible "s3" disk (app/storage)
+            -> record ImageOutput row
+       -> finalize request status
+  <- 200 { status, id, images: [...], errors: [...] }
 
-Worker (image_processing queue)
-  -> read uploaded source once           (app/storage)
-  -> decode once, autorotate, first-frame-only
-  -> for each requested size:
-       govips thumbnail (mode-specific)  (internal/imageprocessing)
-       -> strip metadata, encode WebP
-       -> store file                     (app/storage)
-       -> record ImageOutput row
-  -> finalize request status
-
-Scheduler (hourly) -> CleanupExpiredImagesJob (image_cleanup queue)
-  -> delete files/rows whose expires_at has passed
-
-Client
-  -> GET /api/v1/images/{id}
-  <- { status, images: [...], errors: [...] }
+Scheduler (every minute) -> services.SweepStaleProcessingRequests
+  -> marks a request "failed" if it's been stuck at "processing" without a
+     worker heartbeat for longer than STALE_PROCESSING_TIMEOUT_SECONDS
+     (recovers from a process crash/kill mid-request)
 ```
 
-Layering: controllers are thin (validate, delegate, respond). `app/services`
-orchestrates persistence + dispatch. `app/jobs` orchestrates the worker-side
-pipeline. `internal/imageprocessing` is the only place that imports govips -
+Layering: controllers are thin (validate, delegate, respond).
+`app/services` orchestrates persistence + synchronous processing.
+`app/jobs` holds the actual per-request processing pipeline (invoked
+directly, not dispatched to a queue, for the current image-processing
+flow). `internal/imageprocessing` is the only place that imports govips —
 everything else depends on its `ImageProcessor` interface. `app/storage` is
 the only place that touches the filesystem/S3 disk directly.
 
-### Why one job per request, not one job per size
+Concurrency across simultaneous requests is bounded by an in-process
+semaphore (`MAX_CONCURRENT_IMAGE_JOBS`) inside `services.ProcessImageRequestSync`,
+not by a queue worker pool.
 
-`ProcessImageRequestJob` decodes the source image exactly once and generates
-every requested size from that single decode, rather than dispatching a
-separate job per size:
+### Legacy / currently-idle pieces
 
-- **Decode once, resize many.** govips/libvips can produce multiple resized
-  outputs from one decoded source without re-reading or re-decoding it.
-- **libvips is already internally multi-threaded** per operation
-  (`VIPS_CONCURRENCY`, see [Worker concurrency](#worker-concurrency)).
-  Stacking per-size job parallelism on top would multiply thread contention
-  instead of adding throughput.
-- **Simpler state and idempotency.** One job means one place that decides the
-  request's final status (`completed` / `partially_completed` / `failed`).
+A few pieces from an earlier, asynchronous design are still present in the
+code but not active in the current request flow:
 
-A failure on one requested size does not abort the others (see
-[Partial failures](#partial-failures)).
+- **`CleanupExpiredImagesJob`** (`app/jobs/cleanup_expired_images_job.go`)
+  and its dedicated `CLEANUP_QUEUE` worker (`bootstrap/queue_runners.go`)
+  are registered and running, but nothing schedules or dispatches work to
+  them — generated outputs are treated as permanent now. They're kept in
+  place in case retention-based cleanup is reintroduced.
+- **URL-based input** (`ImageProcessingRequest.InputType`/`InputTypeURL`,
+  `SourceURL`) exists at the model layer, but the current
+  `POST /api/v1/images` request/validation only accepts a multipart file
+  upload (`InputTypeUpload`) — there is no way to submit an `image_url`
+  through the current API surface.
+- `ImageOutput.ExpiresAt` is still computed and stored, but nothing deletes
+  outputs once they expire (see the idle cleanup job above).
 
 ## Resize modes
 
-| API `mode`  | Behavior                                                              | govips mapping                                   |
-|-------------|------------------------------------------------------------------------|---------------------------------------------------|
+| API `mode` | Behavior | govips mapping |
+|---|---|---|
 | `contain` / `fit` (alias) | Fit entirely inside width x height. No crop, no stretch. Result may be smaller than the box on one axis. | thumbnail, `InterestingNone`, `SizeBoth`/`SizeDown` |
-| `cover`     | Fill width x height exactly, cropping overflow, biased toward the visually "interesting" region. | thumbnail, `InterestingAttention` |
-| `crop`      | Fill width x height exactly, cropping overflow from a fixed centre crop (no saliency detection). | thumbnail, `InterestingCentre` |
-| `fill`      | Exact width x height. The only mode that stretches/distorts the aspect ratio. | thumbnail, `SizeForce` |
+| `cover` | Fill width x height exactly, cropping overflow, biased toward the visually "interesting" region. | thumbnail, `InterestingAttention` |
+| `crop` | Fill width x height exactly, cropping overflow from a fixed centre crop (no saliency detection). | thumbnail, `InterestingCentre` |
+| `fill` | Exact width x height. The only mode that stretches/distorts the aspect ratio. | thumbnail, `SizeForce` |
 
 Default mode when omitted: `contain`.
 
-### Upscaling
+- **Upscaling:** `ALLOW_UPSCALE` sets whether outputs may be enlarged beyond
+  the source image's dimensions (default `true`). It applies process-wide;
+  there is no per-request override.
+- **Animated sources:** only the first frame/page of an animated GIF or
+  WebP source is processed. Output is always a single static WebP.
+- **Metadata/orientation:** EXIF/XMP/IPTC metadata is stripped at encode
+  time; source EXIF orientation is applied (autorotate) before resizing.
+- **Quality:** `IMAGE_DEFAULT_QUALITY` (default 80) is used unless a
+  request supplies a per-size `"quality"` override; overrides are clamped
+  to `[IMAGE_QUALITY_MIN, IMAGE_QUALITY_MAX]` (defaults 0-100).
+- **Partial failures:** if some requested sizes succeed and others fail,
+  the request's final status is `partially_completed`; successful outputs
+  are still returned in `images`, failed ones in `errors`. The request only
+  becomes `failed` if none of its sizes succeeded.
+- **Duplicate sizes rejected:** a request asking for the same width x
+  height more than once is rejected outright with a `422`.
+- **Supported source formats:** with a standard `libvips-dev` install:
+  JPEG, PNG, WebP, GIF, TIFF, BMP, SVG. AVIF/HEIC/JPEG 2000/JPEG XL each
+  need their own optional codec libraries present at libvips' build time.
+  Output is always WebP regardless of source format.
 
-`ALLOW_UPSCALE` sets whether outputs may be enlarged beyond the source
-image's dimensions (`true` unless changed). It applies to every request -
-there is no per-request override.
+## API endpoints
 
-### Animated sources
+Base path: `/api/v1` (registered in `routes/api.go`, handled by
+`app/http/controllers/image_controller.go`). No authentication is enforced
+on any endpoint.
 
-Only the first frame/page of an animated GIF or WebP source is processed.
-Output is always a single static WebP.
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/images` | Upload a source image + requested sizes; processes synchronously and returns the final result. |
+| `GET` | `/api/v1/images/{id}` | Look up a previously processed request by id. |
+| `POST` | `/api/v1/images/{id}/retry` | Re-run processing for a request currently `failed` or `partially_completed`; blocks and returns the final result. |
 
-### Metadata and orientation
-
-Every output has EXIF/XMP/IPTC metadata stripped at encode time, so GPS
-coordinates, camera info, timestamps, etc. never end up in a generated file.
-Source EXIF orientation is applied (autorotate) before resizing.
-
-### WebP quality
-
-`IMAGE_DEFAULT_QUALITY` (default 80) is used unless a request supplies a
-per-size `"quality"` override; any override is clamped to
-`[IMAGE_QUALITY_MIN, IMAGE_QUALITY_MAX]` (defaults 0-100).
-
-### Partial failures
-
-If some requested sizes succeed and others fail, the request's final status
-is `partially_completed`; successful outputs are still returned in `images`,
-and failed sizes are reported in `errors`. The request only becomes `failed`
-if none of its sizes succeeded.
-
-## API
+There is also a non-versioned `GET /users` route (`routes/web.go`,
+`app/http/controllers/user_controller.go`) that returns a static
+`{"Hello": "Goravel"}` — a leftover framework scaffold route, not part of
+the image API. `GET /` renders the default Goravel welcome page, and
+`public/` is served statically (the bundled demo frontends live under
+`public/frontend`).
 
 ### `POST /api/v1/images`
 
-`Content-Type: multipart/form-data`, with an `image` file field plus a `data`
-text field holding `{ "sizes": [...] }` as a JSON string:
+`Content-Type: multipart/form-data`, with an `image` file field plus a
+`data` text field holding `{ "sizes": [...] }` as a JSON string:
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/images \
@@ -130,20 +157,16 @@ curl -X POST http://localhost:3000/api/v1/images \
   -F 'image=@photo.jpg'
 ```
 
-Uploaded file size is capped by `MAX_IMAGE_FILE_SIZE`. The uploaded original
-is deleted once processing finishes - only the generated WebP outputs are
-retained. There's no URL-based input: the server never makes an outbound
-request to fetch an image, so there's no SSRF surface.
-
-Response `202`:
-
-```json
-{ "id": 1, "status": "pending" }
-```
-
-Validation errors return `422` with `{"errors": {...}}`. `sizes` accepts at
-most `MAX_SIZES_PER_REQUEST` entries; `mode` must be one of `contain`, `fit`,
-`cover`, `crop`, `fill`.
+- Uploaded file size is capped by `MAX_IMAGE_FILE_SIZE`.
+- The uploaded original is deleted once processing finishes — only
+  generated WebP outputs are retained.
+- There's no URL-based input in the current API — see
+  [Legacy / currently-idle pieces](#legacy--currently-idle-pieces).
+- `sizes` accepts at most `MAX_SIZES_PER_REQUEST` entries; `mode` must be
+  one of `contain`, `fit`, `cover`, `crop`, `fill`.
+- Validation errors return `422` with `{"errors": {...}}`.
+- A successful call returns `200` (not `202` — this is synchronous) with
+  the full result body, same shape as `GET /api/v1/images/{id}` below.
 
 ### `GET /api/v1/images/{id}`
 
@@ -155,8 +178,7 @@ most `MAX_SIZES_PER_REQUEST` entries; `mode` must be one of `contain`, `fit`,
   "source_image": { "width": 550, "height": 368 },
   "images": [
     {
-      "url": "http://localhost:3000/images/1/1.webp",
-      "download_url": "http://localhost:3000/api/v1/images/1/outputs/1/download",
+      "url": "http://localhost:9000/images/media/400x400/<hash>.webp",
       "width": 400,
       "height": 400,
       "mode": "cover",
@@ -170,201 +192,141 @@ most `MAX_SIZES_PER_REQUEST` entries; `mode` must be one of `contain`, `fit`,
 }
 ```
 
-`url` renders inline in a browser; `download_url` sends
-`Content-Disposition: attachment` instead. `status` is one of `pending`,
-`processing`, `completed`, `partially_completed`, `failed`.
+`status` is one of `pending`, `processing`, `completed`,
+`partially_completed`, `failed` (`expired` also exists as a model-level
+status but nothing currently sets it, since output expiry cleanup is idle).
+Each output's `url` points directly at the S3-compatible object storage
+bucket — the backend does not proxy or serve generated files itself.
 
 A ready-to-import request collection is at
-[`postman/image-resizer-goravel.postman_collection.json`](postman/image-resizer-goravel.postman_collection.json)
-(resize modes, upscaling, quality, and error-case examples).
+[`postman/image-resizer-goravel.postman_collection.json`](postman/image-resizer-goravel.postman_collection.json).
 
-### Retention and cleanup
+## Database schema
 
-Every `ImageOutput` gets an `expires_at` computed at creation time from
-`IMAGE_RETENTION_SECONDS` (default 86400, i.e. 24h). `CleanupExpiredImagesJob`
-runs every minute on the dedicated `CLEANUP_QUEUE`, so a backlog of heavy
-processing work never delays cleanup.
+MySQL (or Postgres) tables, defined via the migrations in
+`database/migrations/`:
 
-### Supported source formats
+- **`image_processing_requests`** — one row per API request: `status`,
+  `input_type` (`upload`/`url`), `source_url`, `source_file_path`,
+  `error_message`, `started_at`/`completed_at`/`last_heartbeat_at`,
+  `source_width`/`source_height`, `output_hash`.
+- **`image_processing_request_sizes`** — one row per requested output size
+  within a request: `width`, `height`, `mode`, `allow_upscale`, `quality`,
+  `status`, `error_message`.
+- **`image_outputs`** — one row per successfully generated file: `width`,
+  `height`, `mode`, `format`, `storage_path`, `file_size`, `expires_at`.
+- **`jobs`** / **`failed_jobs`** — Goravel's standard database queue tables
+  (used by the still-registered but currently idle cleanup queue).
 
-With a standard `libvips-dev` install you get JPEG, PNG, WebP, GIF, TIFF,
-BMP, and SVG. AVIF, HEIC/HEIF, JPEG 2000, and JPEG XL each require their own
-optional codec libraries (`libheif`, `libopenjp2`, `libjxl`) to be present at
-libvips' build time. Output is always WebP regardless of source format.
+Model IDs are Goravel's standard auto-incrementing `uint` (`orm.Model`)
+rather than UUIDs.
 
 ## Getting started
 
-There are two ways to run this locally, depending on whether you already
-have a Go toolchain set up.
-
 ### Option A: Docker (no Go required)
 
-Everything (API, MySQL, MinIO object storage) runs in containers - you only
-need [Docker](https://docs.docker.com/get-docker/) and
-[Docker Compose](https://docs.docker.com/compose/install/) (bundled with
-Docker Desktop; on Linux install the `docker-compose-plugin` package).
+```bash
+git clone <your-fork-or-repo-url>.git
+cd image-resizer-goravel-backend
+cp .env.example .env
+docker compose up -d --build
+docker compose exec goravel go run . artisan migrate
+```
 
-1. **Install Docker**, if you haven't already:
-   - macOS/Windows: install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
-   - Linux: follow the [Docker Engine install guide](https://docs.docker.com/engine/install/) for your distro, then `sudo usermod -aG docker $USER` and re-login so you can run `docker` without `sudo`.
-   - Verify: `docker --version` and `docker compose version` both print a version.
+This starts three services (`docker-compose.yml`): `goravel` (the API,
+port `3000`), `mysql` (port `3306`), and `minio` (ports `9000` API / `9001`
+console, credentials `minioadmin`/`minioadmin`) plus a one-shot
+`minio-init` container that creates and publicizes the `images` bucket.
 
-2. **Clone the repo and enter it:**
-   ```bash
-   git clone <your-fork-or-repo-url>.git
-   cd image-resizer-goravel-backend
-   ```
+Verify:
 
-3. **Create your `.env`:**
-   ```bash
-   cp .env.example .env
-   ```
-   The defaults already match the `docker-compose.yml` services (MySQL host
-   `mysql`, MinIO for S3-compatible storage), so no edits are required to get
-   running. Generate an `APP_KEY` if you want one (optional for local dev):
-   ```bash
-   openssl rand -base64 32
-   ```
-   and paste the result as `APP_KEY=` in `.env`.
+```bash
+curl -X POST http://localhost:3000/api/v1/images \
+  -F 'data={"sizes":[{"width":200,"height":200}]}' \
+  -F 'image=@/path/to/any/image.jpg'
+```
 
-4. **Build and start everything:**
-   ```bash
-   docker compose up -d --build
-   ```
-   This starts three services: `goravel` (the API, port `3000`), `mysql`
-   (port `3306`), and `minio` (ports `9000` API / `9001` console,
-   credentials `minioadmin` / `minioadmin`) plus a one-shot `minio-init`
-   container that creates the `images` bucket.
-
-5. **Run database migrations** (the app container doesn't do this
-   automatically):
-   ```bash
-   docker compose exec goravel go run . artisan migrate
-   ```
-   > If your image doesn't have the Go toolchain baked in for this exec
-   > step, run migrations by exec-ing into the container with the compiled
-   > binary instead: `docker compose exec goravel /www/main artisan migrate`.
-
-6. **Verify it's up:**
-   ```bash
-   curl -X POST http://localhost:3000/api/v1/images \
-     -F 'data={"sizes":[{"width":200,"height":200}]}' \
-     -F 'image=@/path/to/any/image.jpg'
-   ```
-   You should get back `{"id":1,"status":"pending"}`. Poll
-   `GET http://localhost:3000/api/v1/images/1` until `status` becomes
-   `completed`.
-
-7. **Stop everything:**
-   ```bash
-   docker compose down        # stop containers, keep data
-   docker compose down -v     # stop and wipe MySQL/MinIO volumes too
-   ```
-
-If port `3306` (MySQL) or `9000`/`9001` (MinIO) are already taken on your
-machine by another service, edit the `ports:` mappings in
-`docker-compose.yml` (left side only, e.g. `"3307:3306"`) before running
-`docker compose up`.
+Stop with `docker compose down` (add `-v` to also wipe MySQL/MinIO
+volumes).
 
 ### Option B: native Go + libvips
 
-Choose this if you're already comfortable with Go and want faster
-edit/rebuild cycles than a container rebuild gives you.
+Prerequisites: Go 1.25+, libvips 8.10+ (`libvips-dev`/`vips` via your
+package manager), and a MySQL 8+ (or Postgres) database — e.g.
+`docker compose up -d mysql minio`.
 
-**Prerequisites:**
-- [Go 1.25+](https://go.dev/doc/install)
-- libvips 8.10+ (8.14+ recommended), via system package:
-  ```bash
-  # Debian/Ubuntu
-  sudo apt-get install -y libvips-dev pkg-config
-
-  # macOS (Homebrew)
-  brew install vips pkg-config
-  ```
-  Check with `vips --version`.
-- A MySQL 8+ database - either run just the `mysql` service from Docker Compose:
-  ```bash
-  docker compose up -d mysql
-  ```
-  or point `DB_HOST`/`DB_PORT`/etc. in `.env` at any MySQL 8+ server you
-  already have.
-
-**Setup:**
 ```bash
 cp .env.example .env
-go mod tidy      # fetches govips and computes go.sum - requires libvips-dev headers above
+go mod tidy      # fetches govips; requires libvips-dev headers
 go run . artisan migrate
+go run .         # HTTP server + cleanup-queue worker + scheduler, all in one process
 ```
 
-**Run:**
-```bash
-go run .   # HTTP server + both queue workers + scheduler, all in one process
-```
+There is no separate `queue:work` process needed for image processing
+itself (it runs inline in the request); the cleanup-queue worker still
+starts automatically as part of the application process
+(`bootstrap/queue_runners.go`).
 
-There is no separate `queue:work` process for this project - the processing
-and cleanup queue workers start automatically as part of the application
-process (see `bootstrap/queue_runners.go`).
+## Environment variables
 
-### Why a database is required
-
-`POST /api/v1/images` returns immediately (`status: pending`) and a worker
-processes the request later, so `GET /api/v1/images/{id}` needs a durable
-place to read status/results from in between - and to survive a worker
-restart. The queue itself is database-backed too
-(`QUEUE_CONNECTION=database`, using the `jobs`/`failed_jobs` tables): the
-only alternative queue driver is `sync`, which runs jobs inline in the HTTP
-request and defeats the "don't process during the request" requirement.
-MySQL was chosen here only because that's what this deployment has
-available; Postgres or SQLite would work equally well - swap
-`config/database.go` and the `goravel/mysql` import for the corresponding
-Goravel database driver package if you'd rather use one of those.
-
-## Configuration
-
-All limits are centralized in `config/image.go` and read through
-`app/support/imageconfig`. See [`.env.example`](.env.example) for the full,
-commented list.
+All image-processing limits are centralized in `config/image.go` and read
+through `app/support/imageconfig`. See [`.env.example`](.env.example) for
+the full, commented list.
 
 | Variable | Purpose |
 |---|---|
-| `APP_KEY` | Application encryption key (generate with `openssl rand -base64 32`) |
-| `APP_PORT` | HTTP port (default `3000`) |
-| `DB_*` | MySQL connection |
+| `APP_NAME`, `APP_ENV`, `APP_KEY`, `APP_DEBUG`, `APP_TIMEZONE` | Standard Goravel app config |
+| `APP_URL`, `APP_HOST`, `APP_PORT` | HTTP server binding (default port `3000`) |
+| `JWT_SECRET` | Present in scaffolding (`config/jwt.go`); not used by any current endpoint |
+| `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_SSLMODE`, `DB_SCHEMA` | Database connection (`mysql` or `postgres`) |
+| `GRPC_HOST`, `GRPC_PORT` | gRPC scaffolding, no service currently registered |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BUCKET`, `AWS_DEFAULT_REGION`, `AWS_ENDPOINT`, `AWS_URL`, `AWS_USE_PATH_STYLE_ENDPOINT` | S3-compatible object storage for generated outputs (MinIO locally) |
+| `MAIL_*` | Mail config scaffolding, not used by the image API |
+| `QUEUE_CONNECTION` | `database` (default) or `sync` |
+| `PROCESSING_QUEUE`, `CLEANUP_QUEUE` | Queue names; only the cleanup queue's worker currently runs |
 | `IMAGE_DEFAULT_QUALITY`, `IMAGE_QUALITY_MIN`, `IMAGE_QUALITY_MAX` | WebP quality default and client-override bounds |
-| `IMAGE_RETENTION_SECONDS` | Output lifetime in seconds, applied at creation time |
+| `IMAGE_RETENTION_SECONDS` | Stored on each output as `expires_at`, but not currently acted on |
 | `ALLOW_UPSCALE` | Whether outputs may be enlarged beyond the source |
 | `MAX_IMAGE_FILE_SIZE` | Uploaded source file size cap (bytes) |
-| `MAX_IMAGE_WIDTH`, `MAX_IMAGE_HEIGHT` | Source dimension caps |
+| `MAX_IMAGE_WIDTH`, `MAX_IMAGE_HEIGHT` | Source/requested dimension caps |
 | `MAX_TOTAL_OUTPUT_PIXELS` | Per-requested-size pixel cap (decompression-bomb guard) |
 | `MAX_SIZES_PER_REQUEST` | Sizes allowed per request |
-| `MAX_CONCURRENT_IMAGE_JOBS`, `VIPS_CONCURRENCY` | Concurrency, see below |
-| `STORAGE_PATH` | Local disk root for generated files (the "images" disk) |
-| `PROCESSING_QUEUE`, `CLEANUP_QUEUE` | Queue names |
-| `QUEUE_CONNECTION` | `database` (real async) or `sync` (inline, tests only) |
-| `AWS_*` | S3-compatible storage (MinIO locally, real S3/MinIO in prod) - see `config/filesystems.go` |
+| `MAX_CONCURRENT_IMAGE_JOBS` | In-process semaphore bounding concurrent synchronous processing |
+| `VIPS_CONCURRENCY` | Threads libvips uses per operation |
+| `HEARTBEAT_INTERVAL_SECONDS`, `STALE_PROCESSING_TIMEOUT_SECONDS` | Stale-request recovery (see [Architecture](#architecture)) |
+| `STORAGE_PATH` | Local disk root used for temporary uploaded originals (the "images" disk) |
 
-### Worker concurrency
+### Worker/processing concurrency
 
-Two independent levels of parallelism are in play: how many
-`ProcessImageRequestJob`s run at once (`MAX_CONCURRENT_IMAGE_JOBS`), and how
-many threads libvips itself uses per operation (`VIPS_CONCURRENCY`). Keep
-roughly `MAX_CONCURRENT_IMAGE_JOBS x VIPS_CONCURRENCY <= CPU cores` available
-to the worker process. The defaults (4 x 2 = 8) target an 8-core worker;
-turn one down before the other on smaller machines.
+Two independent levels of parallelism: how many requests
+`ProcessImageRequestSync` runs at once (`MAX_CONCURRENT_IMAGE_JOBS`), and
+how many threads libvips itself uses per operation (`VIPS_CONCURRENCY`).
+Keep roughly `MAX_CONCURRENT_IMAGE_JOBS x VIPS_CONCURRENCY <= CPU cores`
+available to the process. Defaults (4 x 2 = 8) target an 8-core machine.
 
-## Tests
+## Running tests
 
 ```bash
 go test ./...
 ```
 
 `app/support/imageconfig` has unit tests that run without libvips or a real
-database. Tests exercising `internal/imageprocessing` (actual resizing) and
-the full job/API flow require libvips installed and a configured MySQL
-database (`DB_*` in `.env`).
+database (`app/support/imageconfig/imageconfig_test.go`). The
+`tests/feature` suite uses `stretchr/testify`'s suite package
+(`tests/test_case.go` provides shared setup); exercising the full
+image-processing/API flow requires libvips installed and a configured
+database.
 
-## Deviations from a from-scratch design
+## Deployment / Docker notes
 
-- Model IDs are Goravel's standard auto-incrementing `uint` (`orm.Model`)
-  rather than UUIDs, to stay idiomatic with the framework's generators and
-  conventions.
+- `Dockerfile` builds the Go binary and bundles libvips for the image
+  processing runtime.
+- `docker-compose.yml` wires up the app, MySQL, and MinIO for local/dev use
+  (see [Getting started](#getting-started)); swap `AWS_*` env vars to point
+  at a real S3-compatible endpoint/bucket in production.
+- The `goravel/s3` dependency is replaced (`go.mod`) with a local patched
+  fork in `third_party/goravel-s3` that fixes `use_path_style` handling —
+  required for MinIO/self-hosted S3-compatible endpoints that don't support
+  bucket-as-subdomain routing.
+- Migrations are not run automatically on container start; run
+  `artisan migrate` manually after bringing the stack up.

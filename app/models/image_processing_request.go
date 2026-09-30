@@ -17,19 +17,6 @@ const (
 	RequestStatusExpired            = "expired"
 )
 
-// IsTerminalStatus reports whether status is one a request never leaves
-// once reached (as opposed to "pending"/"processing", which always
-// transition onward). Used to decide when polling/streaming for a request's
-// status can stop.
-func IsTerminalStatus(status string) bool {
-	switch status {
-	case RequestStatusCompleted, RequestStatusPartiallyCompleted, RequestStatusFailed, RequestStatusExpired:
-		return true
-	default:
-		return false
-	}
-}
-
 // InputType values for ImageProcessingRequest.InputType - which of the two
 // supported ways the source image was supplied.
 const (

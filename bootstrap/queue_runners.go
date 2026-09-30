@@ -10,11 +10,15 @@ import (
 
 // queueRunner starts a Goravel queue worker scoped to one named queue with
 // its own concurrency, as a framework Runner (started/stopped alongside the
-// HTTP server by app.Start()/app.Shutdown()). We use two of these - one for
-// PROCESSING_QUEUE, one for CLEANUP_QUEUE - rather than the framework's
-// single default-connection worker, precisely so a backlog of heavy
-// ProcessImageRequestJob work can never starve cleanup (see the plan's
-// "Queue architecture" section).
+// HTTP server by app.Start()/app.Shutdown()).
+//
+// Image processing itself no longer goes through a queue - POST /images and
+// POST /images/{id}/retry run it synchronously, inline in the HTTP handler
+// (see services.ProcessImageRequestSync) - so only CLEANUP_QUEUE's worker
+// remains registered here. It (like the job it would run,
+// CleanupExpiredImagesJob) is currently unused - see that job's own
+// comment - but kept running for the same reason: in case
+// retention-based cleanup is reintroduced later.
 type queueRunner struct {
 	name       string
 	queueName  string
@@ -44,10 +48,9 @@ func (r *queueRunner) Shutdown() error {
 	return r.worker.Shutdown()
 }
 
-// Runners registers the two named-queue workers described above.
+// Runners registers the cleanup-queue worker described above.
 func Runners() []foundation.Runner {
 	return []foundation.Runner{
-		newQueueRunner("processing", imageconfig.ProcessingQueue(), imageconfig.MaxConcurrentImageJobs()),
 		newQueueRunner("cleanup", imageconfig.CleanupQueue(), 1),
 	}
 }
